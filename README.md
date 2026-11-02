@@ -1,4 +1,4 @@
-# 📊 Projeto de Integração de Dados — Data Warehouse de Vigilância Epidemiológica e Pesquisa Clínica (2024–2026)
+# Projeto de Integração de Dados — Data Warehouse de Vigilância Epidemiológica e Pesquisa Clínica (2024–2026)
 
 **Universidade Federal de Pernambuco (UFPE)**  
 **Centro de Informática (CIn) — Ciência da Computação**  
@@ -6,7 +6,7 @@
 
 ---
 
-## 🎯 Sobre o Projeto
+## Sobre o Projeto
 
 Este repositório centraliza os artefatos do **Projeto de Integração de Dados**, cujo objetivo é consolidar três conjuntos de dados públicos do Ministério da Saúde que abrangem anos consecutivos (**2024, 2025 e 2026**), totalizando **$362.729$ registros**, em um **Data Warehouse modelado em Esquema Estrela (*Star Schema*)**:
 
@@ -20,29 +20,29 @@ O projeto implementa e compara dois pipelines distintos construídos no ambiente
 
 ---
 
-## 📂 Estrutura do Repositório
+## Estrutura do Repositório
 
 ```text
-📦 projeto-integracao-bd/
- ┣ 📂 dados/
- ┃  ┗ 📜 README_DADOS.md                        # Link para o Google Drive com os 3 CSVs originais
- ┣ 📂 docs/
- ┃  ┣ 📜 relatorio_projeto_integracao.md        # Relatório completo no formato do Template CIn-UFPE
- ┃  ┣ 📜 dicionario_dados_e_divergencias.md     # Esquema Estrela, Dicionário e Anomalias mapeadas
- ┃  ┗ 🖼️ diagrama_fluxo_integracao.drawio.png   # Diagrama visual da arquitetura ETL/ELT (Draw.io)
- ┣ 📂 notebooks/
- ┃  ┣ 📓 pipeline_ETL.ipynb                     # Notebook Google Colab do processo ETL
- ┃  ┗ 📓 pipeline_ELT.ipynb                     # Notebook Google Colab do processo ELT
- ┣ 📂 sql/
- ┃  ┣ 📜 01_create_star_schema.sql              # DDL de criação das tabelas Fato e Dimensões
- ┃  ┣ 📜 02_transformacoes_elt.sql              # Scripts SQL de transformação dentro do SGBD (ELT)
- ┃  ┗ 📜 03_consultas_analises_insights.sql     # Queries analíticas das 3 Análises e Insights
- ┗ 📜 README.md                                 # Documentação principal e instruções de execução
+ projeto-integracao-bd/
+ ┣  dados/
+ ┃  ┗  README_DADOS.md                        # Link para o Google Drive com os 3 CSVs originais
+ ┣  docs/
+ ┃  ┣  relatorio_projeto_integracao.md        # Relatório completo no formato do Template CIn-UFPE
+ ┃  ┣  dicionario_dados_e_divergencias.md     # Esquema Estrela, Dicionário e Anomalias mapeadas
+ ┃  ┗  diagrama_fluxo_integracao.drawio.png   # Diagrama visual da arquitetura ETL/ELT (Draw.io)
+ ┣  notebooks/
+ ┃  ┣  pipeline_ETL.ipynb                     # Notebook Google Colab do processo ETL
+ ┃  ┗  pipeline_ELT.ipynb                     # Notebook Google Colab do processo ELT
+ ┣  sql/
+ ┃  ┣  01_create_star_schema.sql              # DDL de criação das tabelas Fato e Dimensões
+ ┃  ┣  02_transformacoes_elt.sql              # Scripts SQL de transformação dentro do SGBD (ELT)
+ ┃  ┗  03_consultas_analises_insights.sql     # Queries analíticas das 3 Análises e Insights
+ ┗  README.md                                 # Documentação principal e instruções de execução
 ```
 
 ---
 
-## 🚀 Como Reproduzir e Executar o Projeto
+## Como Reproduzir e Executar o Projeto
 
 1. **Obtenção das Bases de Dados Brutas:**
    * Como o arquivo `CHIKBR25.csv` possui $67,12\text{ MB}$ (acima do limite recomendado de $50\text{ MB}$ do GitHub padrão), os três arquivos originais (`ZIKABR24.csv`, `CHIKBR25.csv` e `plataforma_brasil_2026.csv`) estão disponíveis na pasta compartilhada do Google Drive indicada em `dados/README_DADOS.md`.
@@ -55,20 +55,20 @@ O projeto implementa e compara dois pipelines distintos construídos no ambiente
 
 ---
 
-## 👥 Equipe e Divisão de Responsabilidades
+## Equipe e Divisão de Responsabilidades
 
 | Integrante | Login CIn | Dupla / Frente Principal | Responsabilidades no Projeto |
 | :--- | :--- | :--- | :--- |
-| **Integrante 1 (Você)** | `@login1` | Dupla 1 — Arquitetura & ETL | Concepção da Macroentrega 1, Modelagem Star Schema, Dicionário de Dados, Pipeline ETL |
-| **Integrante 2** | `@login2` | Dupla 1 — Arquitetura & ETL | Desenvolvimento do Notebook Colab ETL, tratamento em Python/Pandas e carga dimensional |
-| **Integrante 3** | `@login3` | Dupla 2 — Engenharia ELT & BD | Configuração do SGBD, carga *Staging* e desenvolvimento do Notebook Colab ELT |
-| **Integrante 4** | `@login4` | Dupla 2 — Engenharia ELT & BD | Scripts SQL de transformação interna (`02_transformacoes_elt.sql`) e comparativo ETL vs. ELT |
-| **Integrante 5** | `@login5` | Dupla 3 — Analytics & Docs | Diagrama de fluxo no Draw.io, Consultas SQL e Visualizações das 3 Análises e Insights |
-| **Integrante 6** | `@login6` | Dupla 3 — Analytics & Docs | Consolidação do Relatório Final, Evidências Intermediárias e Slides da Apresentação |
+| **Cauã Emanuel** | `ceor` | Dupla 1 — Arquitetura & ETL | Concepção da Macroentrega 1, Modelagem Star Schema, Dicionário de Dados, Pipeline ETL |
+| **Allanis Beatriz** | `aboml` | Dupla 1 — Arquitetura & ETL | Desenvolvimento do Notebook Colab ETL, tratamento em Python/Pandas e carga dimensional |
+| **Arthur Gabriel** | `agsl` | Dupla 2 — Engenharia ELT & BD | Configuração do SGBD, carga *Staging* e desenvolvimento do Notebook Colab ELT |
+| **Allan Fernandes** | `afl4` | Dupla 2 — Engenharia ELT & BD | Scripts SQL de transformação interna (`02_transformacoes_elt.sql`) e comparativo ETL vs. ELT |
+| **Felipe Melo** | `fma4` | Dupla 3 — Analytics & Docs | Diagrama de fluxo no Draw.io, Consultas SQL e Visualizações das 3 Análises e Insights |
+| **Amanda Pereira** | `apmo` | Dupla 3 — Analytics & Docs | Consolidação do Relatório Final, Evidências Intermediárias e Slides da Apresentação |
 
 ---
 
-## ⚠️ Padrão Obrigatório de Commits no GitHub
+## Padrão Obrigatório de Commits no GitHub
 
 Para atender aos critérios de avaliação da disciplina, **todos os integrantes devem realizar commits utilizando suas próprias contas do GitHub** e seguir o padrão descritivo abaixo (mensagens genéricas como `"update"`, `"teste"` ou `"ajuste final"` são proibidas):
 

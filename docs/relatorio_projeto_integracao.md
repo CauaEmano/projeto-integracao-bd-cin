@@ -2,12 +2,12 @@
 ## Centro de Informática - CIn
 
 **Integrantes (Nome - login):**
-* Nome Integrante 1 - `login1@cin.ufpe.br`
-* Nome Integrante 2 - `login2@cin.ufpe.br`
-* Nome Integrante 3 - `login3@cin.ufpe.br`
-* Nome Integrante 4 - `login4@cin.ufpe.br`
-* Nome Integrante 5 - `login5@cin.ufpe.br`
-* Nome Integrante 6 - `login6@cin.ufpe.br`
+* Cauã Emanuel - `ceor@cin.ufpe.br`
+* Allanis Beatriz - `aboml@cin.ufpe.br`
+* Arthur Gabriel - `agsl@cin.ufpe.br`
+* Allan Fernandes - `afl4@cin.ufpe.br`
+* Felipe Melo - `fma4@cin.ufpe.br`
+* Amanda Pereira - `apmo@cin.ufpe.br`
 
 **TEMA:** Vigilância Epidemiológica de Arboviroses (Zika Vírus e Febre de Chikungunya) e Produção Científica em Saúde no Brasil (2024–2026)
 
