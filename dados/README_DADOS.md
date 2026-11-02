@@ -1,0 +1,1 @@
+# Bases de Dados Brutas (2024-2026)\nBaixe os arquivos ZIKABR24.csv, CHIKBR25.csv e plataforma_brasil_2026.csv no link do Drive: [https://drive.google.com/drive/folders/1l_Y6rJ0Vk7mxYkryVpMvs7tuViZRcv9B?usp=drive_link]
