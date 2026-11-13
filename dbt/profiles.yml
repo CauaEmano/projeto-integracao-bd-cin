@@ -1,0 +1,13 @@
+zika:
+  target: local
+  outputs:
+    local:
+      type: mysql
+      server: "{{ env_var('MYSQL_HOST', '127.0.0.1') }}"
+      port: "{{ env_var('MYSQL_PORT', '3306') | int }}"
+      schema: "{{ env_var('MYSQL_DATABASE', 'zika_dw') }}"
+      username: "{{ env_var('MYSQL_USER', 'root') }}"
+      password: "{{ env_var('MYSQL_PASSWORD', '') }}"
+      charset: utf8mb4
+      collation: utf8mb4_0900_bin
+      threads: 1

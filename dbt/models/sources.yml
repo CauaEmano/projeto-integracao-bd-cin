@@ -1,0 +1,6 @@
+version: 2
+sources:
+  - name: bruto
+    schema: "{{ env_var('MYSQL_DATABASE', 'zika_dw') }}"
+    tables:
+      - name: stg_zika

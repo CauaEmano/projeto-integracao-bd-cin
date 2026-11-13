@@ -1,0 +1,9 @@
+name: zika
+version: '1.0.0'
+config-version: 2
+profile: zika
+model-paths: [models]
+test-paths: [tests]
+models:
+  zika:
+    +materialized: table

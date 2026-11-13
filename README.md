@@ -1,57 +1,125 @@
-# 📊 Projeto de Integração de Dados — Data Warehouse de Vigilância Epidemiológica de Zika Vírus no Brasil (2024–2026)
+# Integração de dados — Zika/SINAN (2024–2026)
 
-**Universidade Federal de Pernambuco (UFPE)**  
-**Centro de Informática (CIn) — Ciência da Computação**  
-**Disciplina:** Banco de Dados  
+Projeto de Banco de Dados, CIn/UFPE. Integra `ZIKABR24.csv`, `ZIKABR25.csv` e
+`ZIKABR26.csv` em um esquema estrela com **cinco dimensões e uma fato**.
+Os dois pipelines publicam **o mesmo esquema MySQL, com os mesmos dados e regras**.
 
----
+![Arquitetura ETL e ELT](docs/diagrama_fluxo_integracao.png)
 
-## Sobre o Projeto
+- **ETL:** CSVs → Pandas → filtragem, decodificação e modelagem em memória → esquema estrela MySQL.
+- **ELT:** CSVs → Pandas textual → staging bruto MySQL → consultas SQL com dbt → esquema estrela MySQL.
 
-Este repositório centraliza os artefatos do **Projeto de Integração de Dados**, cujo objetivo é consolidar três conjuntos de dados temporais consecutivos (**2024, 2025 e 2026**) referentes às notificações de **Zika Vírus no Brasil (Tema 10 — SINAN / Ministério da Saúde)** em um **Data Warehouse modelado em Esquema Estrela (*Star Schema*)**:
+## Arquivos
 
-1. **Base 2024 (`ZIKABR24.csv`):** Microdados de notificações e investigações de Zika Vírus registrados em $2024$ ($38$ atributos originais).
-2. **Base 2025 (`ZIKABR25.csv`):** Microdados de notificações e investigações de Zika Vírus registrados em $2025$ ($38$ atributos originais).
-3. **Base 2026 (`ZIKABR26.csv`):** Microdados de notificações e investigações de Zika Vírus registrados em $2026$ ($38$ atributos originais).
+| Caminho | Conteúdo |
+|---|---|
+| `dados/ZIKABR{24,25,26}.csv` | Três bases brutas, 38 campos e 82.460 linhas no total |
+| `notebooks/pipeline_ETL.ipynb` | Execução ETL em etapas, com transformação em Python |
+| `notebooks/pipeline_ELT_completo_executado.ipynb` | Execução ELT com MySQL e dbt; saídas antigas removidas |
+| `notebooks/analises_zika.ipynb` | Consultas e três visualizações, separadas dos pipelines |
+| `pipelines/core.py` | Extração e transformação ETL |
+| `pipelines/run.py` | Orquestração por linha de comando |
+| `pipelines/contrato.json` | Colunas, tipos, domínios e UFs compartilhados |
+| `dbt/models/` | Transformações SQL ELT e modelos intermediários |
+| `dbt/tests/` | Reconciliação e regras de métricas |
+| `sql/01_script_ddl_do_esquema_estrela.sql` | DDL MySQL comum com PKs, FKs e checks |
+| `docs/dicionario_de_dados_e_mapeamento_de_divergencias.md` | Dicionário completo e regras de integração |
+| `docs/relatorio_projeto_integracao.md` | Relatório com referência ao dicionário |
 
-O projeto implementa e compara dois pipelines distintos construídos no ambiente **Google Colab**:
-* **Pipeline ETL (*Extract, Transform, Load*):** Extração dos 3 arquivos anuais, tratamento de vazamento temporal entre anos, limpeza de *outliers*, decodificação de domínios do SINAN em memória (Python/Pandas) e carga no Esquema Estrela.
-* **Pipeline ELT (*Extract, Load, Transform*):** Extração e carga bruta dos 3 arquivos diretamente em tabelas *Staging* no SGBD, executando todas as transformações, deduplicações e padronizações via scripts SQL dentro do banco de dados.
+## Execução local ou Colab
 
----
+Requisitos: **Python 3.10–3.12** e **MySQL 8.0.16+** acessível pelo ambiente Python.
+O adapter comunitário `dbt-mysql==1.7.0` usa dbt Core 1.7; as versões estão delimitadas
+em `requirements.txt`. Veja a [documentação do adapter](https://github.com/dbeatty10/dbt-mysql#configuring-your-profile).
 
-## Estrutura do Repositório
+Na raiz do clone:
 
-    projeto-integracao-bd/
-     ┣ dados/
-     ┃  ┣ ZIKABR24.csv                           # Base SINAN Zika Vírus - Ano 2024
-     ┃  ┣ ZIKABR25.csv                           # Base SINAN Zika Vírus - Ano 2025
-     ┃  ┗ ZIKABR26.csv                           # Base SINAN Zika Vírus - Ano 2026
-     ┣ docs/
-     ┃  ┣ relatorio_projeto_integracao.md        # Relatório completo no formato do Template CIn-UFPE
-     ┃  ┣ dicionario_dados_e_divergencias.md     # Esquema Estrela, Dicionário e Divergências entre os 3 anos
-     ┃  ┗ diagrama_fluxo_integracao.drawio.png   # Diagrama visual da arquitetura ETL/ELT (Draw.io)
-     ┣ notebooks/
-     ┃  ┣ pipeline_ETL.ipynb                     # Notebook Google Colab do processo ETL
-     ┃  ┗ pipeline_ELT.ipynb                     # Notebook Google Colab do processo ELT
-     ┣ sql/
-     ┃  ┣ 01_create_star_schema.sql              # DDL de criação das tabelas Fato e Dimensões
-     ┃  ┣ 02_transformacoes_elt.sql              # Scripts SQL de transformação dentro do SGBD (ELT)
-     ┃  ┗ 03_consultas_analises_insights.sql     # Queries analíticas das 3 Análises e Insights
-     ┗ README.md                                 # Documentação principal e instruções de execução
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
 
----
+Crie um banco dedicado uma única vez no MySQL:
 
-## Como Reproduzir e Executar o Projeto
+```sql
+CREATE DATABASE zika_dw CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_bin;
+```
 
-1. **Bases de Dados Brutas (`dados/`):**
-   * Como os três arquivos de Zika Vírus (`ZIKABR24.csv`, `ZIKABR25.csv` e `ZIKABR26.csv`) são leves (cerca de $6,5\text{ MB}$ em $2024$, e ainda menores em $2025$ e $2026$), eles já estão versionados diretamente na pasta `dados/` deste repositório, permitindo que os notebooks do Google Colab façam a leitura direta via URL do GitHub ou clonagem do repositório.
-2. **Execução do Pipeline ETL:**
-   * Abra o arquivo `notebooks/pipeline_ETL.ipynb` no **Google Colab**.
-   * Execute todas as células sequencialmente para realizar a extração dos 3 anos, transformação via Pandas e carga no banco dimensional.
-3. **Execução do Pipeline ELT:**
-   * Abra o arquivo `notebooks/pipeline_ELT.ipynb` no **Google Colab**.
-   * O notebook realizará a carga bruta (*Staging*) dos três arquivos CSV e executará os scripts contidos em `sql/01_create_star_schema.sql` e `sql/02_transformacoes_elt.sql` diretamente no SGBD.
+Configure a conexão no ambiente. `.env.example` lista as opções; os scripts não carregam `.env`
+automaticamente. Use um usuário com permissões de criar, ler, alterar e remover tabelas nesse banco.
+
+```bash
+export MYSQL_HOST=127.0.0.1
+export MYSQL_PORT=3306
+export MYSQL_USER=root
+export MYSQL_DATABASE=zika_dw
+read -rsp 'Senha MySQL: ' MYSQL_PASSWORD
+export MYSQL_PASSWORD
+```
+
+Escolha um fluxo (ou execute ambos sequencialmente para comparar):
+
+```bash
+python -m pipelines.run etl
+python -m pipelines.run elt
+```
+
+O ETL termina a transformação e a construção das dimensões antes da conexão ao banco.
+O ELT carrega os valores originais em `stg_zika`, executa `dbt build` e publica as tabelas
+`elt_dim_*`/`elt_fato_notificacao_zika` no esquema final usando `INSERT ... SELECT`.
+O dbt resolve as dependências com `source()` e `ref()` e testa as chaves e relações.
+
+Ambos substituem o conteúdo das **seis tabelas estrela** em uma transação, sem remover
+as tabelas. Falhas de publicação causam rollback. No ELT, staging e modelos intermediários
+são reconstruídos antes da publicação. Não execute cargas simultâneas no mesmo banco.
+Para preservar duas saídas para comparação, use bancos dedicados diferentes.
+
+O DDL usa `CREATE TABLE IF NOT EXISTS`: para bancos legados com outro esquema, use um
+**novo banco dedicado**. O pipeline não migra nem apaga tabelas legadas automaticamente.
+
+As contagens e o tempo de execução ficam em `saidas/etl/manifesto.json` e
+`saidas/elt/manifesto.json`. `ZIKA_DATA_DIR` permite trocar a pasta de entrada;
+`ZIKA_OUTPUT_DIR` permite trocar a pasta de saída. Rejeições ETL ficam em CSV e rejeições
+ELT em `elt_rejeitados`, com origem e motivo.
+
+No Colab, clone o repositório, entre em sua raiz com `%cd`, instale com
+`%pip install -r requirements.txt`, configure o MySQL acessível e execute o notebook escolhido
+em ordem. Os notebooks também funcionam quando abertos na pasta `notebooks/` do clone.
+
+## Contrato e validação
+
+O [dicionário](docs/dicionario_de_dados_e_mapeamento_de_divergencias.md) contém os tipos,
+os mapeamentos e as regras comuns. Deduplicação considera os 38 campos originais;
+registros com dados diferentes são preservados, pois não há identificador único na extração.
+Na entrada atual: **82.460 brutas = 56 duplicatas exatas + 0 rejeições + 82.404 válidas**.
+
+Após alterar os domínios do contrato, regenere os modelos SQL:
+
+```bash
+python -m pipelines.generate_dbt
+python -m unittest tests.test_pipelines
+```
+
+O teste de integração exige MySQL e um usuário autorizado a criar/remover bancos de teste:
+
+```bash
+python -m tests.integration_mysql
+```
+
+Ele cria um banco temporário com UUID, compara integralmente as seis tabelas entre ETL e
+ELT, testa reexecução e casos de borda e remove somente o banco temporário ao terminar.
+Também testa rollback após violação de FK. Os 26 testes do dbt são executados em cada ELT.
+
+Os resultados verificados estão em [docs/validacao_pipelines.md](docs/validacao_pipelines.md).
+
+## Análises e relatório
+
+Abra `notebooks/analises_zika.ipynb` após concluir um dos fluxos. O notebook consulta o
+esquema final e gera gráficos de sazonalidade, gestantes por UF e tempos da vigilância em
+`saidas/analises/`. O relatório aponta para esse arquivo e para o dicionário.
+2026 é parcial; os números antigos calculados antes da deduplicação devem ser recalculados.
+O PDF comparativo existente é um artefato histórico, não a especificação dos fluxos atuais.
 
 ---
 

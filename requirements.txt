@@ -1,0 +1,6 @@
+pandas>=2.2,<4
+mysql-connector-python>=9,<10
+dbt-core>=1.7,<1.8
+dbt-mysql==1.7.0
+matplotlib>=3.8,<4
+nbformat>=5,<6

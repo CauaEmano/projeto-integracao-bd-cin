@@ -1,90 +1,186 @@
-# 🛠️ Guia Técnico para as Duplas de ETL e ELT: Regras de Negócio e Divergências (Zika 2024, 2025 e 2026)
+# Dicionário de dados e mapeamento de divergências — Zika/SINAN
 
-Este documento detalha o mapeamento exato das colunas originais dos arquivos `ZIKABR24.csv`, `ZIKABR25.csv` e `ZIKABR26.csv` para o nosso **Esquema Estrela**, além de listar as **diferenças e problemas reais entre os 3 anos** (item obrigatório na apresentação e no relatório).
+Este é o dicionário do projeto, extraído do relatório e consolidado para **ETL e ELT**.
+Os nomes físicos são minúsculos no MySQL. Ambos publicam exatamente as mesmas seis tabelas,
+com o mesmo [DDL](../sql/01_script_ddl_do_esquema_estrela.sql).
+O [contrato executável](../pipelines/contrato.json) centraliza colunas, tipos e domínios.
+Os modelos dbt são gerados dele por `python -m pipelines.generate_dbt`.
 
----
+## 1. Dicionário de Dados do Esquema Estrela
 
-## 1. Visão Geral das 3 Bases Anuais (`dados/`)
+#### Tabela Fato: `FATO_NOTIFICACAO_ZIKA`
+| Atributo | Tipo de Dado | Restrição | Descrição e Metadados Relevantes |
+| :--- | :--- | :--- | :--- |
+| `sk_notificacao` | `INTEGER` | `PRIMARY KEY` | Chave substituta (*Surrogate Key*) única do registro na tabela fato. |
+| `fk_tempo_notificacao` | `INTEGER` | `FOREIGN KEY` | Referência à `DIM_TEMPO` para a data da notificação (`DT_NOTIFIC`, formato `YYYYMMDD`). |
+| `fk_tempo_sintomas` | `INTEGER` | `FOREIGN KEY` | Referência à `DIM_TEMPO` para a data dos primeiros sintomas (`DT_SIN_PRI`, ou `0` se ausente). |
+| `fk_localidade_residencia`| `INTEGER` | `FOREIGN KEY` | Referência à `DIM_LOCALIDADE` (UF e município de residência do paciente: `SG_UF`, `ID_MN_RESI`). |
+| `fk_unidade_notificadora`| `INTEGER` | `FOREIGN KEY` | Referência à `DIM_UNIDADE_NOTIFICADORA` (CNES, UF e município onde o atendimento foi notificado). |
+| `fk_paciente` | `INTEGER` | `FOREIGN KEY` | Referência à `DIM_PACIENTE` (perfil sociodemográfico: sexo, faixa etária, raça/cor, gestante, escolaridade). |
+| `fk_desfecho` | `INTEGER` | `FOREIGN KEY` | Referência à `DIM_INVESTIGACAO_DESFECHO` (classificação final, critério, evolução, autoctonia). |
+| `qt_notificacoes` | `INTEGER` | `NOT NULL` | Métrica aditiva base ($1$ para cada notificação válida integrada). |
+| `fl_confirmado` | `INTEGER` | `NOT NULL` | Indicador binário ($1$ se `CLASSI_FIN = 1` — Caso Confirmado; $0$ caso contrário). |
+| `fl_descartado` | `INTEGER` | `NOT NULL` | Indicador binário ($1$ se `CLASSI_FIN = 2` — Caso Descartado; $0$ caso contrário). |
+| `fl_gestante` | `INTEGER` | `NOT NULL` | Indicador binário ($1$ se `CS_GESTANT` estiver entre $1$ e $4$ — Paciente Gestante; $0$ caso contrário). |
+| `fl_obito_zika` | `INTEGER` | `NOT NULL` | Indicador binário ($1$ se `EVOLUCAO = 2` — Óbito pelo agravo notificado; $0$ caso contrário). |
+| `qt_dias_atraso_notif` | `INTEGER` | `NULLABLE` | Métrica contínua: diferença em dias entre `DT_NOTIFIC` e `DT_SIN_PRI` ($\text{DT\_NOTIFIC} - \text{DT\_SIN\_PRI}$). |
+| `qt_dias_encerramento` | `INTEGER` | `NULLABLE` | Métrica contínua: diferença em dias entre o encerramento (`DT_ENCERRA`) e a notificação (`DT_NOTIFIC`). |
 
-* **Arquivos:** `ZIKABR24.csv` (2024), `ZIKABR25.csv` (2025) e `ZIKABR26.csv` (2026).
-* **Formato Físico:** Codificação `UTF-8`, separador vírgula (`,`), $38$ colunas em cada arquivo.
-* **Vantagem para o Repositório:** Como os 3 arquivos juntos ocupam menos de $15\text{ MB}$, todos os três podem ficar salvos diretamente na pasta `dados/` do GitHub sem precisar de LFS!
+#### Tabelas Dimensão (`DIM_TEMPO`, `DIM_LOCALIDADE`, `DIM_UNIDADE_NOTIFICADORA`, `DIM_PACIENTE`, `DIM_INVESTIGACAO_DESFECHO`)
+| Tabela Dimensão | Atributos (Colunas) | Descrição e Origem dos Metadados no SINAN |
+| :--- | :--- | :--- |
+| **`DIM_TEMPO`** | `sk_tempo` (PK), `data_completa` (`DATE`), `ano` (`INT`), `mes` (`INT`), `nome_mes` (`VARCHAR`), `trimestre` (`INT`), `semana_epidemiologica` (`INT`), `periodo_sazonal` (`VARCHAR`) | Extraída das datas válidas de `DT_NOTIFIC` e `DT_SIN_PRI`; semana epidemiológica recalculada pela data. Classifica os meses em `'Alta Transmissão (Jan-Mai)'` e `'Baixa Transmissão (Jun-Dez)'`. |
+| **`DIM_LOCALIDADE`** | `sk_localidade` (PK), `cod_uf_ibge` (`INT`), `sigla_uf` (`CHAR(2)`), `nome_estado` (`VARCHAR`), `regiao_brasil` (`VARCHAR`), `cod_municipio_ibge6` (`INT`), `cod_regional_saude` (`INT`) | Extraída de `SG_UF`, `ID_MN_RESI` e `ID_RG_RESI`. Converte os códigos numéricos de UF do IBGE (`11` a `53`) em siglas (`RO` a `DF`), nomes de estados e macrorregiões. |
+| **`DIM_UNIDADE_NOTIFICADORA`** | `sk_unidade` (PK), `cod_unidade_cnes` (`INT`), `cod_uf_notificacao` (`INT`), `sigla_uf_notificacao` (`CHAR(2)`), `cod_municipio_notificacao` (`INT`), `cod_regional_notificacao` (`INT`) | Extraída de `ID_UNIDADE`, `SG_UF_NOT`, `ID_MUNICIP` e `ID_REGIONA`. Permite cruzar o local de residência do paciente com o local efetivo de atendimento médico. |
+| **`DIM_PACIENTE`** | `sk_paciente` (PK), `sexo` (`CHAR(1)`), `descricao_sexo` (`VARCHAR`), `idade_anos` (`INT`), `faixa_etaria` (`VARCHAR`), `raca_cor` (`VARCHAR`), `status_gestante` (`VARCHAR`), `escolaridade` (`VARCHAR`) | Decodifica `CS_SEXO`, `NU_IDADE_N` (convertido de código composto de 4 dígitos para anos e faixas etárias), `CS_RACA`, `CS_GESTANT` e `CS_ESCOL_N`. |
+| **`DIM_INVESTIGACAO_DESFECHO`** | `sk_desfecho` (PK), `classificacao_final` (`VARCHAR`), `criterio_confirmacao` (`VARCHAR`), `evolucao_caso` (`VARCHAR`), `tipo_autoctonia` (`VARCHAR`), `doenca_trabalho` (`VARCHAR`) | Decodifica os domínios epidemiológicos de `CLASSI_FIN`, `CRITERIO`, `EVOLUCAO`, `TPAUTOCTO` e `DOENCA_TRA`. |
 
----
 
-## 2. As 5 Diferenças e Problemas ao Longo do Tempo (Para Tratar no Código e Mostrar nos Slides)
+## 2. Regras comuns e granularidade
 
-A especificação do projeto pede para **destacar diferenças percebidas nos dados ao longo do tempo (de um ano para o outro)**. Aqui estão os 5 pontos reais encontrados nas bases de Zika de 2024, 2025 e 2026:
+- Uma linha da fato representa uma linha válida distinta do conjunto de **38 campos brutos**.
+  Deduplicação exata entre arquivos, preservando a primeira ocorrência pela ordem arquivo/linha.
+  Sem identificador único na fonte, não se presume que linhas diferentes sejam o mesmo caso.
+- Os três CSVs usam UTF-8 (BOM tolerado), vírgula e o mesmo cabeçalho de 38 campos.
+  ELT armazena todo o texto em `stg_zika` antes de qualquer limpeza, com `arquivo_origem`
+  e `linha_origem`. ETL lê o mesmo texto em Pandas e transforma em memória.
+- `DT_NOTIFIC` deve ser uma data ISO válida (`YYYY-MM-DD`, anos 1000–9999).
+  Ausência ou data impossível causa quarentena. ETL exporta `saidas/etl/rejeitados.csv`;
+  ELT mantém `elt_rejeitados` no MySQL. As datas opcionais inválidas tornam-se NULL.
+- Ano, mês e trimestre vêm da data efetiva; `NU_ANO` e o nome do arquivo não definem o calendário.
+  `SEM_NOT`/`SEM_PRI` são preservados no staging; `dim_tempo` usa semana de domingo a sábado,
+  primeira semana com ao menos quatro dias do ano (MySQL `WEEK(data,6)`).
+- Idade: `1000 <= NU_IDADE_N < 4000` vira 0 anos; de 4000 a 4120 subtrai-se 4000;
+  qualquer outro código vira NULL. As faixas são **0 a 14**, **15 a 29**, **30 a 44**,
+  **45 a 59**, **60 anos ou mais** e **Ignorado**.
+- Códigos textuais inteiros ou com sufixo `.0` são convertidos para inteiro.
+  Zero em códigos geográficos vira NULL; `CS_ESCOL_N=0` permanece **Analfabeto**.
+- A residência ausente permanece desconhecida, sem inferência a partir do local de atendimento.
+  UF sem cadastro recebe `NI` / `Não Informado`; códigos numéricos válidos são preservados.
+- Intervalos entre sintomas/notificação e notificação/encerramento são aceitos entre 0 e 365 dias,
+  inclusive. Valores negativos, acima de 365 ou com datas ausentes viram NULL.
+- `qt_notificacoes=1`; `fl_confirmado=(CLASSI_FIN=1)`, `fl_descartado=(CLASSI_FIN=2)`,
+  `fl_gestante=(CS_GESTANT em 1,2,3,4)` e `fl_obito_zika=(EVOLUCAO=2)`.
+  Óbitos por outras causas (`EVOLUCAO=3`) não compõem `fl_obito_zika`.
+- Dimensões de perfil são combinações distintas de atributos, não pessoas identificadas.
+  As SKs são determinísticas, sequenciais a partir de 1; tempo usa YYYYMMDD.
+  Todas as dimensões contêm SK=0 reservado ao membro desconhecido. Datas ausentes referenciam 0.
+  Combinações parcialmente desconhecidas conservam seus atributos e recebem SK própria.
+- MySQL 8.0.16+, InnoDB, `utf8mb4_0900_bin`; FKs explícitas e checks no DDL comum.
+  A publicação substitui os dados das seis tabelas em transação; falha causa rollback.
+  Não execute os dois pipelines simultaneamente no mesmo banco.
 
-1. **Vazamento Temporal entre os Arquivos Anuais (`NU_ANO` vs. Arquivo de Origem):**
-   * O SINAN exporta os arquivos com base no calendário epidemiológico. Por isso, dentro de `ZIKABR24.csv` existem registros com `NU_ANO = 2025` (da 1ª semana epidemiológica), e o mesmo ocorre na transição entre `ZIKABR25.csv` e `ZIKABR26.csv`.
-   * **Regra no ETL/ELT:** Ao concatenar (`UNION ALL` / `pd.concat`) os 3 arquivos, extrair o ano real diretamente de `DT_NOTIFIC` e aplicar deduplicação para evitar que notificações de fronteira de ano sejam contadas duas vezes.
-2. **Evolução da Taxa de Casos "Em Aberto / Nulos" entre 2024, 2025 e 2026:**
-   * Na base de **2024** (`ZIKABR24.csv`), a maioria das investigações já foi encerrada (`DT_ENCERRA` preenchida e `CLASSI_FIN` definido).
-   * Nas bases de **2025** (`ZIKABR25.csv`) e principalmente **2026** (`ZIKABR26.csv`), há um aumento expressivo de valores nulos (`NaN` / `NULL`) nas colunas de desfecho (`CLASSI_FIN`, `CRITERIO`, `EVOLUCAO`, `DT_ENCERRA`), pois muitos casos recentes ainda aguardam resultado laboratorial.
-   * **Regra no ETL/ELT:** Nunca descartar linhas que tenham `CLASSI_FIN` nulo! Mapear `NULL` em `CLASSI_FIN`, `CRITERIO` e `EVOLUCAO` para `'Em Investigação / Não Preenchido'`.
-3. **Mudança de Tipagem Automática (`float64` vs. `int64`) por Presença de Nulos:**
-   * Colunas de código como `SG_UF`, `ID_MN_RESI`, `CS_GESTANT`, `CS_RACA`, `CLASSI_FIN`, `CRITERIO` e `EVOLUCAO` vêm como `float` (`1.0`, `26.0`, `261160.0`) quando há nulos no arquivo anual.
-   * **Regra no ETL/ELT:** Converter para inteiro (`Int64` ou `CAST(... AS INTEGER)`) antes de fazer o *join* ou mapeamento de texto.
-4. **Codificação Composta de Idade (`NU_IDADE_N`) e Outliers:**
-   * A coluna `NU_IDADE_N` usa 4 dígitos: `1xxx` (Horas), `2xxx` (Dias), `3xxx` (Meses), `4xxx` (Anos).
-   * **Regra de Decodificação:**
-     * Se `NU_IDADE_N < 4000`: `idade_anos = 0` (Menor de 1 ano).
-     * Se `NU_IDADE_N >= 4000` e `NU_IDADE_N <= 4120`: `idade_anos = NU_IDADE_N - 4000`.
-     * Se `NU_IDADE_N > 4120` ou nulo: `idade_anos = NULL` (trata outliers de erro de digitação).
-   * **Faixas Etárias Padronizadas (`faixa_etaria`):**
-     * `0 a 14 anos` (Criança/Adolescente)
-     * `15 a 29 anos` (Jovem)
-     * `30 a 44 anos` (Adulto I)
-     * `45 a 59 anos` (Adulto II)
-     * `60 anos ou mais` (Idoso)
-     * `Ignorado` (quando `idade_anos IS NULL`)
-5. **Datas Inválidas no Cálculo de Atraso de Notificação e Encerramento:**
-   * Existem registros onde `DT_SIN_PRI > DT_NOTIFIC` (atraso negativo) ou `DT_SIN_PRI` foi digitado com ano errado (ex: 1990, gerando atraso $> 365\text{ dias}$).
-   * **Regra no ETL/ELT:** Calcular `qt_dias_atraso_notif = DT_NOTIFIC - DT_SIN_PRI`. Se o valor for $< 0$ ou $> 365$, gravar `NULL`. Aplicar a mesma regra para `qt_dias_encerramento = DT_ENCERRA - DT_NOTIFIC`.
+## 3. Domínios de decodificação
 
----
+Códigos não listados, vazios ou inválidos usam o padrão da coluna.
 
-## 3. Tabelas de Decodificação de Domínios do SINAN (Para usar no Python e no SQL)
+### `descricao_sexo` ← `CS_SEXO`
 
-### 3.1. Condição Gestacional (`CS_GESTANT`) $\rightarrow$ `status_gestante` e `fl_gestante`
-| Código (`CS_GESTANT`) | Descrição (`status_gestante`) | Flag na Fato (`fl_gestante`) |
-| :---: | :--- | :---: |
-| `1` | `1º Trimestre` | `1` |
-| `2` | `2º Trimestre` | `1` |
-| `3` | `3º Trimestre` | `1` |
-| `4` | `Idade Gestacional Ignorada` | `1` |
-| `5` | `Não Gestante` | `0` |
-| `6` | `Não se aplica` | `0` |
-| `9` ou `NULL` | `Ignorado` | `0` |
+| Código | Descrição |
+|---|---|
+| `M` | Masculino |
+| `F` | Feminino |
+| `I` | Ignorado |
 
-### 3.2. Raça/Cor (`CS_RACA`) $\rightarrow$ `raca_cor`
-* `1` $\rightarrow$ `'Branca'`
-* `2` $\rightarrow$ `'Preta'`
-* `3` $\rightarrow$ `'Amarela'`
-* `4` $\rightarrow$ `'Parda'`
-* `5` $\rightarrow$ `'Indígena'`
-* `9` ou `NULL` $\rightarrow$ `'Ignorado'`
+**Padrão:** Ignorado.
 
-### 3.3. Classificação Final (`CLASSI_FIN`), Critério (`CRITERIO`) e Evolução (`EVOLUCAO`)
-* **`CLASSI_FIN`:**
-  * `1` $\rightarrow$ `'Confirmado'` (`fl_confirmado = 1`, `fl_descartado = 0`)
-  * `2` $\rightarrow$ `'Descartado'` (`fl_confirmado = 0`, `fl_descartado = 1`)
-  * `8` ou `NULL` $\rightarrow$ `'Inconclusivo / Em Investigação'` (`fl_confirmado = 0`, `fl_descartado = 0`)
-* **`CRITERIO`:**
-  * `1` $\rightarrow$ `'Laboratorial'`
-  * `2` $\rightarrow$ `'Clínico-Epidemiológico'`
-  * `3` $\rightarrow$ `'Em Investigação'`
-  * `NULL` / Outros $\rightarrow$ `'Ignorado / Não Preenchido'`
-* **`EVOLUCAO`:**
-  * `1` $\rightarrow$ `'Cura'` (`fl_obito_zika = 0`)
-  * `2` $\rightarrow$ `'Óbito pelo agravo'` (`fl_obito_zika = 1`)
-  * `3` $\rightarrow$ `'Óbito por outras causas'` (`fl_obito_zika = 0`)
-  * `9` ou `NULL` $\rightarrow$ `'Ignorado / Em Acompanhamento'` (`fl_obito_zika = 0`)
+### `raca_cor` ← `CS_RACA`
 
-### 3.4. Mapeamento de Código IBGE de UF (`SG_UF` e `SG_UF_NOT`)
-| Código IBGE | Sigla UF | Nome do Estado | Região |
-| :---: | :---: | :--- | :--- |
+| Código | Descrição |
+|---|---|
+| `1` | Branca |
+| `2` | Preta |
+| `3` | Amarela |
+| `4` | Parda |
+| `5` | Indígena |
+| `9` | Ignorado |
+
+**Padrão:** Ignorado.
+
+### `status_gestante` ← `CS_GESTANT`
+
+| Código | Descrição |
+|---|---|
+| `1` | 1º Trimestre |
+| `2` | 2º Trimestre |
+| `3` | 3º Trimestre |
+| `4` | Idade Gestacional Ignorada |
+| `5` | Não Gestante |
+| `6` | Não se aplica |
+| `9` | Ignorado |
+
+**Padrão:** Ignorado.
+
+### `escolaridade` ← `CS_ESCOL_N`
+
+| Código | Descrição |
+|---|---|
+| `0` | Analfabeto |
+| `1` | 1ª a 4ª série incompleta |
+| `2` | 4ª série completa |
+| `3` | 5ª à 8ª série incompleta |
+| `4` | Ensino fundamental completo |
+| `5` | Ensino médio incompleto |
+| `6` | Ensino médio completo |
+| `7` | Educação superior incompleta |
+| `8` | Educação superior completa |
+| `9` | Ignorado |
+| `10` | Não se aplica |
+
+**Padrão:** Ignorado.
+
+### `classificacao_final` ← `CLASSI_FIN`
+
+| Código | Descrição |
+|---|---|
+| `1` | Confirmado |
+| `2` | Descartado |
+| `8` | Inconclusivo / Em Investigação |
+
+**Padrão:** Inconclusivo / Em Investigação.
+
+### `criterio_confirmacao` ← `CRITERIO`
+
+| Código | Descrição |
+|---|---|
+| `1` | Laboratorial |
+| `2` | Clínico-Epidemiológico |
+| `3` | Em Investigação |
+
+**Padrão:** Ignorado / Não Preenchido.
+
+### `evolucao_caso` ← `EVOLUCAO`
+
+| Código | Descrição |
+|---|---|
+| `1` | Cura |
+| `2` | Óbito pelo agravo |
+| `3` | Óbito por outras causas |
+
+**Padrão:** Ignorado / Em Acompanhamento.
+
+### `tipo_autoctonia` ← `TPAUTOCTO`
+
+| Código | Descrição |
+|---|---|
+| `1` | Autóctone |
+| `2` | Importado |
+
+**Padrão:** Indeterminado / Ignorado.
+
+### `doenca_trabalho` ← `DOENCA_TRA`
+
+| Código | Descrição |
+|---|---|
+| `1` | Sim |
+| `2` | Não |
+
+**Padrão:** Ignorado.
+
+## 4. Cadastro de UFs
+
+| Código IBGE | Sigla | Estado | Região |
+|---|---|---|---|
 | 11 | RO | Rondônia | Norte |
 | 12 | AC | Acre | Norte |
 | 13 | AM | Amazonas | Norte |
@@ -112,3 +208,23 @@ A especificação do projeto pede para **destacar diferenças percebidas nos dad
 | 51 | MT | Mato Grosso | Centro-Oeste |
 | 52 | GO | Goiás | Centro-Oeste |
 | 53 | DF | Distrito Federal | Centro-Oeste |
+
+## 5. Divergências entre os arquivos e destino dos campos
+
+| Divergência | Tratamento efetivo nos pipelines |
+|---|---|
+| Ano do arquivo, `NU_ANO` e `DT_NOTIFIC` podem divergir | Calendário derivado de `DT_NOTIFIC`; deduplicação exata interanual. |
+| Códigos vazios, zeros e representação decimal | Conversão comum e padrões dos domínios; preserva escolaridade 0. |
+| Maior ausência de desfecho em extrações recentes | Mantém notificações e usa os rótulos de investigação definidos acima. |
+| Idade composta e valores acima de 120 anos | Decodificação e NULL conforme seção 2. |
+| Datas de sintomas ou encerramento incoerentes | Intervalos fora de 0–365 viram NULL. |
+| `ID_AGRAVO` como `A92.` e `A928`; `COUFINF` misto (ex.: `ES`) | Preservados no bruto; não são atributos do esquema estrela atual. Não há limpeza dessas colunas na fato. |
+
+Campos usados nas dimensões: `DT_NOTIFIC`, `DT_SIN_PRI`, `SG_UF`, `ID_MN_RESI`, `ID_RG_RESI`,
+`ID_UNIDADE`, `SG_UF_NOT`, `ID_MUNICIP`, `ID_REGIONA`, `CS_SEXO`, `NU_IDADE_N`, `CS_RACA`,
+`CS_GESTANT`, `CS_ESCOL_N`, `CLASSI_FIN`, `CRITERIO`, `EVOLUCAO`, `TPAUTOCTO`, `DOENCA_TRA`.
+`DT_ENCERRA` alimenta a métrica de encerramento. Os demais campos não são promovidos para a estrela;
+permanecem nos CSVs e, no ELT, no staging. Não são criadas flags ou dimensões extras.
+
+Na entrada versionada: 82.460 linhas brutas, 56 duplicatas exatas, 0 rejeições e 82.404 linhas na fato.
+Esses totais são evidências desta versão, não constantes exigidas para novas extrações.

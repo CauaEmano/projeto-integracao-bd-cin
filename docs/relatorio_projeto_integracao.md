@@ -28,36 +28,14 @@ A base de dados unificada resulta da integração e consolidação de três conj
 
 Para transformar as três tabelas operacionais anuais do SINAN (que possuem códigos numéricos truncados, datas dispersas e atributos mistos de paciente, localidade e investigação na mesma linha) em um repositório analítico de alto desempenho, foi projetado um **Data Warehouse modelado em Esquema Estrela (*Star Schema*)**.
 
-A modelagem é composta por **1 Tabela Fato central** (`FATO_NOTIFICACAO_ZIKA`) cercada por **5 Tabelas Dimensão** (`DIM_TEMPO`, `DIM_LOCALIDADE_RESIDENCIA`, `DIM_UNIDADE_NOTIFICADORA`, `DIM_PACIENTE` e `DIM_INVESTIGACAO_DESFECHO`). A granularidade da tabela fato é o **caso individual notificado e consolidado no triênio 2024–2026**, contendo métricas aditivas e indicadores binários (*flags*) que permitem agregações rápidas por período, estado/município, perfil demográfico (como gestantes) e desfecho clínico.
+A modelagem é composta por **1 Tabela Fato central** (`FATO_NOTIFICACAO_ZIKA`) cercada por **5 Tabelas Dimensão** (`DIM_TEMPO`, `DIM_LOCALIDADE`, `DIM_UNIDADE_NOTIFICADORA`, `DIM_PACIENTE` e `DIM_INVESTIGACAO_DESFECHO`). A granularidade da tabela fato é a **linha válida distinta nos 38 campos brutos das extrações do triênio 2024–2026**, contendo métricas aditivas e indicadores binários (*flags*) que permitem agregações rápidas por período, estado/município, perfil demográfico (como gestantes) e desfecho clínico.
 
-### 1.2. Dicionário de Dados do Esquema Estrela
+### 1.2. Dicionário de Dados
 
-#### Tabela Fato: `FATO_NOTIFICACAO_ZIKA`
-| Atributo | Tipo de Dado | Restrição | Descrição e Metadados Relevantes |
-| :--- | :--- | :--- | :--- |
-| `sk_notificacao` | `INTEGER` | `PRIMARY KEY` | Chave substituta (*Surrogate Key*) única do registro na tabela fato. |
-| `fk_tempo_notificacao` | `INTEGER` | `FOREIGN KEY` | Referência à `DIM_TEMPO` para a data da notificação (`DT_NOTIFIC`, formato `YYYYMMDD`). |
-| `fk_tempo_sintomas` | `INTEGER` | `FOREIGN KEY` | Referência à `DIM_TEMPO` para a data dos primeiros sintomas (`DT_SIN_PRI`, ou `0` se ausente). |
-| `fk_localidade_residencia`| `INTEGER` | `FOREIGN KEY` | Referência à `DIM_LOCALIDADE` (UF e município de residência do paciente: `SG_UF`, `ID_MN_RESI`). |
-| `fk_unidade_notificadora`| `INTEGER` | `FOREIGN KEY` | Referência à `DIM_UNIDADE_NOTIFICADORA` (CNES, UF e município onde o atendimento foi notificado). |
-| `fk_paciente` | `INTEGER` | `FOREIGN KEY` | Referência à `DIM_PACIENTE` (perfil sociodemográfico: sexo, faixa etária, raça/cor, gestante, escolaridade). |
-| `fk_desfecho` | `INTEGER` | `FOREIGN KEY` | Referência à `DIM_INVESTIGACAO_DESFECHO` (classificação final, critério, evolução, autoctonia). |
-| `qt_notificacoes` | `INTEGER` | `NOT NULL` | Métrica aditiva base ($1$ para cada notificação válida integrada). |
-| `fl_confirmado` | `INTEGER` | `NOT NULL` | Indicador binário ($1$ se `CLASSI_FIN = 1` — Caso Confirmado; $0$ caso contrário). |
-| `fl_descartado` | `INTEGER` | `NOT NULL` | Indicador binário ($1$ se `CLASSI_FIN = 2` — Caso Descartado; $0$ caso contrário). |
-| `fl_gestante` | `INTEGER` | `NOT NULL` | Indicador binário ($1$ se `CS_GESTANT` estiver entre $1$ e $4$ — Paciente Gestante; $0$ caso contrário). |
-| `fl_obito_zika` | `INTEGER` | `NOT NULL` | Indicador binário ($1$ se `EVOLUCAO = 2` — Óbito pelo agravo notificado; $0$ caso contrário). |
-| `qt_dias_atraso_notif` | `INTEGER` | `NULLABLE` | Métrica contínua: diferença em dias entre `DT_NOTIFIC` e `DT_SIN_PRI` ($\text{DT\_NOTIFIC} - \text{DT\_SIN\_PRI}$). |
-| `qt_dias_encerramento` | `INTEGER` | `NULLABLE` | Métrica contínua: diferença em dias entre o encerramento (`DT_ENCERRA`) e a notificação (`DT_NOTIFIC`). |
-
-#### Tabelas Dimensão (`DIM_TEMPO`, `DIM_LOCALIDADE`, `DIM_UNIDADE_NOTIFICADORA`, `DIM_PACIENTE`, `DIM_INVESTIGACAO_DESFECHO`)
-| Tabela Dimensão | Atributos (Colunas) | Descrição e Origem dos Metadados no SINAN |
-| :--- | :--- | :--- |
-| **`DIM_TEMPO`** | `sk_tempo` (PK), `data_completa` (`DATE`), `ano` (`INT`), `mes` (`INT`), `nome_mes` (`VARCHAR`), `trimestre` (`INT`), `semana_epidemiologica` (`INT`), `periodo_sazonal` (`VARCHAR`) | Extraída de `DT_NOTIFIC`, `DT_SIN_PRI`, `NU_ANO` e `SEM_NOT`. Classifica os meses em `'Alta Transmissão (Jan-Mai)'` e `'Baixa Transmissão (Jun-Dez)'`. |
-| **`DIM_LOCALIDADE`** | `sk_localidade` (PK), `cod_uf_ibge` (`INT`), `sigla_uf` (`CHAR(2)`), `nome_estado` (`VARCHAR`), `regiao_brasil` (`VARCHAR`), `cod_municipio_ibge6` (`INT`), `cod_regional_saude` (`INT`) | Extraída de `SG_UF`, `ID_MN_RESI` e `ID_RG_RESI`. Converte os códigos numéricos de UF do IBGE (`11` a `53`) em siglas (`RO` a `DF`), nomes de estados e macrorregiões. |
-| **`DIM_UNIDADE_NOTIFICADORA`** | `sk_unidade` (PK), `cod_unidade_cnes` (`INT`), `cod_uf_notificacao` (`INT`), `sigla_uf_notificacao` (`CHAR(2)`), `cod_municipio_notificacao` (`INT`), `cod_regional_notificacao` (`INT`) | Extraída de `ID_UNIDADE`, `SG_UF_NOT`, `ID_MUNICIP` e `ID_REGIONA`. Permite cruzar o local de residência do paciente com o local efetivo de atendimento médico. |
-| **`DIM_PACIENTE`** | `sk_paciente` (PK), `sexo` (`CHAR(1)`), `descricao_sexo` (`VARCHAR`), `idade_anos` (`INT`), `faixa_etaria` (`VARCHAR`), `raca_cor` (`VARCHAR`), `status_gestante` (`VARCHAR`), `escolaridade` (`VARCHAR`) | Decodifica `CS_SEXO`, `NU_IDADE_N` (convertido de código composto de 4 dígitos para anos e faixas etárias), `CS_RACA`, `CS_GESTANT` e `CS_ESCOL_N`. |
-| **`DIM_INVESTIGACAO_DESFECHO`** | `sk_desfecho` (PK), `classificacao_final` (`VARCHAR`), `criterio_confirmacao` (`VARCHAR`), `evolucao_caso` (`VARCHAR`), `tipo_autoctonia` (`VARCHAR`), `doenca_trabalho` (`VARCHAR`) | Decodifica os domínios epidemiológicos de `CLASSI_FIN`, `CRITERIO`, `EVOLUCAO`, `TPAUTOCTO` e `DOENCA_TRA`. |
+O dicionário completo, os tipos, as origens e as regras dos dois pipelines estão no
+[arquivo próprio do dicionário](dicionario_de_dados_e_mapeamento_de_divergencias.md).
+O contrato executável é [`pipelines/contrato.json`](../pipelines/contrato.json) e o
+DDL compartilhado é [`sql/01_script_ddl_do_esquema_estrela.sql`](../sql/01_script_ddl_do_esquema_estrela.sql).
 
 ---
 
@@ -89,19 +67,26 @@ Do ponto de vista técnico de Engenharia de Dados, os arquivos anuais do SINAN e
 
 ## 4. Descrição dos Processos de Transformação Aplicados
 
-Para garantir a qualidade, integridade referencial e consistência analítica do Data Warehouse unificado (82.460 notificações de Zika Vírus entre 2024 e 2026), foram implementadas seis etapas estruturadas de transformação de dados:
+Os dois pipelines seguem as mesmas regras do [dicionário de dados](dicionario_de_dados_e_mapeamento_de_divergencias.md).
+O ETL transforma e modela em Python/Pandas antes da carga no MySQL; o ELT carrega o texto bruto
+no MySQL e transforma por consultas SQL gerenciadas pelo dbt. A publicação usa o mesmo DDL,
+com cinco dimensões e a fato `fato_notificacao_zika`.
 
-1. Unificação de Códigos de Agravo Truncados (ID_AGRAVO): Na base de 2024 (ZIKABR24.csv), identificou-se que todos os 5.427 registros provenientes do estado do Espírito Santo (SG_UF_NOT = 32) apresentavam o código CID-10 truncado como 'A92.', enquanto os demais 77.033 registros da série histórica utilizavam 'A928'. Aplicou-se limpeza de espaços e substituição exata ('A92.' -> 'A928'), garantindo 100% de uniformidade na identificação do agravo.
+1. Extração dos três CSVs, preservando os 38 campos e registrando arquivo e linha de origem.
+2. Remoção apenas de duplicatas exatas nos 38 campos brutos, independentemente do arquivo anual.
+   Sem identificador único de notificação, registros com diferenças de conteúdo são preservados.
+3. Validação da data real de notificação. Datas obrigatórias inválidas vão à quarentena;
+   datas opcionais inválidas tornam-se nulas. O ano é derivado de `DT_NOTIFIC`.
+4. Conversão dos códigos numéricos (inclusive texto como `26.0`), decodificação dos domínios
+   e idade em anos inteiros; faixas: 0–14, 15–29, 30–44, 45–59, 60+ e Ignorado.
+5. Cálculo dos intervalos de notificação e encerramento, mantendo apenas valores de 0 a 365 dias.
+   Classificações ausentes permanecem em investigação; `fl_obito_zika` considera apenas `EVOLUCAO=2`.
+6. Geração das dimensões, chaves e fatos, seguida de publicação transacional e validação de integridade.
 
-2. Resolução de Conflito de Tipagem em COUFINF (UF Provável de Infecção): Na safra de 2024, a coluna foi exportada como texto (object), contendo 12 ocorrências da sigla 'ES' ao lado de códigos numéricos do IBGE em formato string ('29', '23'). Já nas safras de 2025 e 2026, a coluna veio como ponto flutuante (float64), utilizando 0.0 (1.434 casos) para representar valores ausentes. A transformação converteu siglas textuais para o respectivo código IBGE ('ES' -> 32), transformou zeros falsos em NULL/NaN e tipou o atributo como inteiro anulável (Int64).
-
-3. Saneamento de Zeros Falsos (0 -> NULL) em Colunas de Domínio: Verificou-se uma mudança sistemática no extrator do DataSUS ao longo do triênio: campos não preenchidos que recebiam o literal 0 em 2024 (especialmente nos lotes do ES) passaram a ser exportados como NaN em 2025 e 2026. Como o código 0 não existe nos domínios oficiais dessas variáveis no SINAN, realizou-se a conversão de 0 para NaN em 12 atributos (COPAISINF: 69.403 registros; NDUPLIC_N, IN_VINCULA, ID_OCUPA_N, TP_SISTEMA e TPUNINOT: 6.871 registros cada; COMUNINF: 6.849; ID_RG_RESI: 5.467; DOENCA_TRA: 3.317; EVOLUCAO: 552; CRITERIO: 94; e CLASSI_FIN: 27). Excepcionalmente, preservou-se o código 0 na coluna de escolaridade (CS_ESCOL_N, 716 registros), pois neste atributo específico do SINAN o valor 0 representa legitimamente a categoria Analfabeto.
-
-4. Decodificação da Idade Composta (NU_IDADE_N) e Categorização Etária: O SINAN armazena a idade como um inteiro de 4 dígitos (UXXX), onde o primeiro dígito indica a unidade de tempo (1=Horas, 2=Dias, 3=Meses, 4=Anos) e os três últimos indicam a quantidade. Desenvolveu-se uma função de decodificação que converteu todas as 82.460 entradas para idade real em anos (idade_anos, resultando em média de 32,45 anos, mediana de 30,00 anos e desvio padrão de 19,61 anos) e classificou os pacientes em seis faixas etárias epidemiológicas (< 1 ano, 01 a 09 anos, 10 a 19 anos, 20 a 39 anos, 40 a 59 anos e 60+ anos).
-
-5. Correção de Vazamento Temporal e Expurgo de Datas Anômalas: Como os arquivos brutos continham vazamento entre anos (ex.: 69 casos de 2025 dentro de ZIKABR24.csv e 6 casos de 2024 + 6 de 2026 dentro de ZIKABR25.csv), os atributos temporais (ano_notificacao, mes_notificacao e trimestre_notificacao) foram extraídos diretamente da data efetiva de notificação (DT_NOTIFIC). Em seguida, calcularam-se as métricas qt_dias_atraso_notif (DT_NOTIFIC - DT_SIN_PRI, média de 5,67 dias e mediana de 3,00 dias) e qt_dias_encerramento (DT_ENCERRA - DT_NOTIFIC). Nesta última, identificaram-se 13 registros com valores negativos (mínimo de -674 dias, fruto de erro de digitação no ano de encerramento) e 60 registros superiores a 365 dias (máximo de 539 dias), os quais foram higienizados para NULL/NaN, estabilizando a média em 29,06 dias (mediana de 19,00 dias).
-
-6. Tradução Semântica de Domínios, Imputação Geográfica de Fallback e Flags Analíticas: Os códigos numéricos de sexo, raça/cor, gestação, escolaridade, classificação final, critério de confirmação e evolução foram mapeados para suas descrições textuais oficiais. Nos 32 registros em que a UF e o município de residência (SG_UF e ID_MN_RESI) estavam ausentes, aplicou-se imputação de fallback utilizando a UF e o município da unidade notificadora (SG_UF_NOT e ID_MUNICIP). Por fim, geraram-se cinco indicadores binários (0 ou 1) para agregação direta na Tabela Fato: fl_confirmado (4.619 casos), fl_descartado (71.540 casos), fl_gestante (7.185 casos), fl_obito (421 casos) e fl_autoctone (12.843 casos).
+A entrada versionada contém **82.460 linhas**; a deduplicação exata remove **56**, resultando
+em **82.404 notificações válidas**, sem rejeições por data de notificação nesta versão dos CSVs.
+Valores antigos do relatório calculados sobre a base sem deduplicação precisam ser recalculados
+no [notebook de análises](../notebooks/analises_zika.ipynb).
 
 ---
 
@@ -111,9 +96,9 @@ Para garantir a qualidade, integridade referencial e consistência analítica do
 
 | Critério Analisado | Pipeline ETL (Python / Pandas $\rightarrow$ BD) | Pipeline ELT (Carga Staging $\rightarrow$ SQL no SGBD) |
 | :--- | :--- | :--- |
-| **Fluxo de Processamento** | Os 3 CSVs (`2024`, `2025`, `2026`) são lidos, limpos e modelados em *DataFrames* no Pandas antes de inserir no banco. | Os 3 CSVs são carregados diretamente em tabelas brutas (`stg_zika_2024`, `stg_zika_2025`, `stg_zika_2026`) e transformados via SQL. |
+| **Fluxo de Processamento** | Os 3 CSVs (`2024`, `2025`, `2026`) são lidos, limpos e modelados em *DataFrames* no Pandas antes de inserir no banco. | Os 3 CSVs são carregados diretamente em tabelas brutas (`stg_zika`, com arquivo e linha de origem) e transformados via SQL. |
 | **Decodificação de Domínios (`NU_IDADE_N`, `CS_GESTANT`, UF)** | Realizada via funções vetorizadas do Pandas (`.map()`, `np.select()`). Muito intuitiva para limpeza de tipos mistos. | Realizada via expressões declarativas `CASE WHEN` e `COALESCE` diretamente nas queries `INSERT INTO ... SELECT`. |
-| **Deduplicação e Geração de Dimensões** | Exige `.drop_duplicates()` em memória e controle manual de índices para gerar as *Surrogate Keys* (`sk_`). | O próprio SGBD garante unicidade via `DISTINCT` / `GROUP BY` e chaves `AUTOINCREMENT` / `ROW_NUMBER()`. |
+| **Deduplicação e Geração de Dimensões** | Exige `.drop_duplicates()` em memória e controle manual de índices para gerar as *Surrogate Keys* (`sk_`). | O próprio SGBD garante unicidade via `DISTINCT` / `GROUP BY` e chaves `ROW_NUMBER()`. |
 | **Reprocessamento e Auditoria** | Qualquer mudança em regra de negócio exige reler os CSVs do disco e rodar todo o script Python novamente. | Como os dados brutos já estão persistidos nas tabelas *Staging* do banco, basta reexecutar o script SQL em poucos segundos. |
 | **Tempo Total de Execução (Colab)** | `[Inserir tempo medido na Macroentrega 3]` | `[Inserir tempo medido na Macroentrega 3]` |
 
@@ -121,22 +106,17 @@ Para garantir a qualidade, integridade referencial e consistência analítica do
 
 ## 6. Apresentação de Três Análises e Insights
 
-*(Nota para a Macroentrega 3: A Dupla 3 deve inserir aqui os gráficos gerados pelo notebook/SQL das 3 análises abaixo).*
+As consultas, gráficos e exportações estão em [`notebooks/analises_zika.ipynb`](../notebooks/analises_zika.ipynb),
+executado após ETL ou ELT. Os pipelines contêm apenas reconciliação e validações operacionais.
 
-### Análise 1: Evolução Temporal, Sazonalidade e Taxa de Confirmação no Triênio (2024–2026)
-* **Objetivo da Análise:** Comparar a curva mensal e trimestral de notificações de Zika Vírus nos anos de $2024$, $2025$ e $2026$, avaliando a concentração sazonal nos meses chuvosos ($1^{\circ}$ semestre) e a evolução da proporção de casos Confirmados (`CLASSI_FIN = 1`), Descartados (`CLASSI_FIN = 2`) e Inconclusivos/Em Investigação (`CLASSI_FIN = 8` ou `NULL`).
-* **Referência da Base de 2024:** Em $2024$, das $43.312$ notificações, $7.136$ ($16,5\%$) foram confirmadas, $23.163$ ($53,5\%$) descartadas e $13.013$ ($30,0\%$) permaneceram inconclusivas ou sem preenchimento, com pico concentrado entre fevereiro e maio.
-* **Insight Obtido:** A comparação entre os três anos demonstra o efeito do ciclo sazonal do *Aedes aegypti* (concentração massiva nos dois primeiros trimestres do ano) e evidencia como a proporção de casos sem classificação final (`NULL`/`Inconclusivo`) aumenta nos anos mais recentes ($2025$ e $2026$) devido ao represamento laboratorial de sorologias no SINAN.
+1. **Sazonalidade:** evolução mensal de notificações por ano real de `DT_NOTIFIC`.
+2. **Gestantes:** notificações e confirmações por UF de residência, incluindo a categoria NI.
+3. **Vigilância:** médias de atraso de notificação e tempo de encerramento por região,
+   considerando apenas intervalos válidos de 0 a 365 dias.
 
-### Análise 2: Monitoramento de Grupo de Risco Prioritário — Gestantes e Perfil Sociodemográfico por UF (2024–2026)
-* **Objetivo da Análise:** Investigar a distribuição dos casos notificados e confirmados de Zika Vírus segundo sexo, faixa etária, raça/cor e **condição gestacional (`fl_gestante = 1`)** entre as Unidades da Federação e Regiões do Brasil.
-* **Referência Estatística:** Na série analisada, a idade média dos pacientes gira em torno de $33,19\text{ anos}$ ($\text{mediana} = 31\text{ anos}$, $\text{DP} = 19,30$), com forte predominância do sexo feminino ($\approx 61,9\%$) e expressivo volume de notificações em gestantes ($4.159$ gestantes notificadas apenas em $2024$). Estados do Sudeste (ES, MG), Nordeste (BA, PE, RN, CE) e Centro-Oeste (MT) concentram os maiores volumes absolutos.
-* **Insight Obtido:** A sobrerrepresentação feminina na faixa de $20\text{ a }39\text{ anos}$ é diretamente explicada pelos protocolos obrigatórios de triagem pré-natal implantados após a epidemia de microcefalia: enquanto homens adultos com sintomas leves frequentemente não procuram unidades de saúde, gestantes são sistematicamente notificadas e submetidas ao critério laboratorial.
-
-### Análise 3: Eficiência da Vigilância Epidemiológica — Atraso de Notificação, Tempo de Encerramento e Mobilidade de Atendimento
-* **Objetivo da Análise:** Avaliar a agilidade do sistema de saúde por estado e região através de três indicadores: (i) atraso entre primeiros sintomas e notificação (`qt_dias_atraso_notif`), (ii) tempo até o encerramento da investigação (`qt_dias_encerramento`) e (iii) proporção de pacientes atendidos fora do seu município de residência (`DIM_LOCALIDADE.cod_municipio_ibge6 != DIM_UNIDADE_NOTIFICADORA.cod_municipio_notificacao`).
-* **Referência Estatística:** O atraso até a notificação apresenta mediana de $3,0\text{ dias}$, porém média de $5,68\text{ dias}$ ($\text{DP} = 12,39$), puxada por notificações digitadas tardiamente em mutirões de vigilância.
-* **Insight Obtido:** Municípios do interior sem laboratório próprio apresentam maior tempo de encerramento da investigação e maior deslocamento de pacientes (especialmente gestantes) para unidades notificadoras localizadas nas capitais e sedes de Regionais de Saúde.
+Os gráficos são exportados para `saidas/analises/`. As conclusões devem ser registradas após
+executar as análises sobre a versão atual, sem reutilizar estatísticas da carga anterior.
+2026 é parcial; contagens absolutas de notificações não medem incidência populacional.
 
 ---
 

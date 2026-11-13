@@ -1,0 +1,111 @@
+version: 2
+models:
+- name: elt_dim_tempo
+  columns:
+  - name: sk_tempo
+    tests:
+    - unique
+    - not_null
+  - name: data_completa
+  - name: ano
+  - name: mes
+  - name: nome_mes
+  - name: trimestre
+  - name: semana_epidemiologica
+  - name: periodo_sazonal
+- name: elt_dim_localidade
+  columns:
+  - name: sk_localidade
+    tests:
+    - unique
+    - not_null
+  - name: cod_uf_ibge
+  - name: sigla_uf
+  - name: nome_estado
+  - name: regiao_brasil
+  - name: cod_municipio_ibge6
+  - name: cod_regional_saude
+- name: elt_dim_unidade_notificadora
+  columns:
+  - name: sk_unidade
+    tests:
+    - unique
+    - not_null
+  - name: cod_unidade_cnes
+  - name: cod_uf_notificacao
+  - name: sigla_uf_notificacao
+  - name: cod_municipio_notificacao
+  - name: cod_regional_notificacao
+- name: elt_dim_paciente
+  columns:
+  - name: sk_paciente
+    tests:
+    - unique
+    - not_null
+  - name: sexo
+  - name: descricao_sexo
+  - name: idade_anos
+  - name: faixa_etaria
+  - name: raca_cor
+  - name: status_gestante
+  - name: escolaridade
+- name: elt_dim_investigacao_desfecho
+  columns:
+  - name: sk_desfecho
+    tests:
+    - unique
+    - not_null
+  - name: classificacao_final
+  - name: criterio_confirmacao
+  - name: evolucao_caso
+  - name: tipo_autoctonia
+  - name: doenca_trabalho
+- name: elt_fato_notificacao_zika
+  columns:
+  - name: sk_notificacao
+    tests:
+    - unique
+    - not_null
+  - name: fk_tempo_notificacao
+    tests:
+    - not_null
+    - relationships:
+        to: ref('elt_dim_tempo')
+        field: sk_tempo
+  - name: fk_tempo_sintomas
+    tests:
+    - not_null
+    - relationships:
+        to: ref('elt_dim_tempo')
+        field: sk_tempo
+  - name: fk_localidade_residencia
+    tests:
+    - not_null
+    - relationships:
+        to: ref('elt_dim_localidade')
+        field: sk_localidade
+  - name: fk_unidade_notificadora
+    tests:
+    - not_null
+    - relationships:
+        to: ref('elt_dim_unidade_notificadora')
+        field: sk_unidade
+  - name: fk_paciente
+    tests:
+    - not_null
+    - relationships:
+        to: ref('elt_dim_paciente')
+        field: sk_paciente
+  - name: fk_desfecho
+    tests:
+    - not_null
+    - relationships:
+        to: ref('elt_dim_investigacao_desfecho')
+        field: sk_desfecho
+  - name: qt_notificacoes
+  - name: fl_confirmado
+  - name: fl_descartado
+  - name: fl_gestante
+  - name: fl_obito_zika
+  - name: qt_dias_atraso_notif
+  - name: qt_dias_encerramento

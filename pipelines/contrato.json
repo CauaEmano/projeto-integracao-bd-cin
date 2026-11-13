@@ -1,0 +1,338 @@
+{
+  "columns": [
+    "TP_NOT",
+    "ID_AGRAVO",
+    "DT_NOTIFIC",
+    "SEM_NOT",
+    "NU_ANO",
+    "SG_UF_NOT",
+    "ID_MUNICIP",
+    "ID_REGIONA",
+    "ID_UNIDADE",
+    "DT_SIN_PRI",
+    "SEM_PRI",
+    "ANO_NASC",
+    "NU_IDADE_N",
+    "CS_SEXO",
+    "CS_GESTANT",
+    "CS_RACA",
+    "CS_ESCOL_N",
+    "SG_UF",
+    "ID_MN_RESI",
+    "ID_RG_RESI",
+    "ID_PAIS",
+    "NDUPLIC_N",
+    "IN_VINCULA",
+    "DT_INVEST",
+    "ID_OCUPA_N",
+    "CLASSI_FIN",
+    "CRITERIO",
+    "TPAUTOCTO",
+    "COUFINF",
+    "COPAISINF",
+    "COMUNINF",
+    "DOENCA_TRA",
+    "EVOLUCAO",
+    "DT_OBITO",
+    "DT_ENCERRA",
+    "DT_DIGITA",
+    "TP_SISTEMA",
+    "TPUNINOT"
+  ],
+  "domains": {
+    "descricao_sexo": {
+      "source": "CS_SEXO",
+      "default": "Ignorado",
+      "values": {
+        "M": "Masculino",
+        "F": "Feminino",
+        "I": "Ignorado"
+      }
+    },
+    "raca_cor": {
+      "source": "CS_RACA",
+      "default": "Ignorado",
+      "values": {
+        "1": "Branca",
+        "2": "Preta",
+        "3": "Amarela",
+        "4": "Parda",
+        "5": "Indígena",
+        "9": "Ignorado"
+      }
+    },
+    "status_gestante": {
+      "source": "CS_GESTANT",
+      "default": "Ignorado",
+      "values": {
+        "1": "1º Trimestre",
+        "2": "2º Trimestre",
+        "3": "3º Trimestre",
+        "4": "Idade Gestacional Ignorada",
+        "5": "Não Gestante",
+        "6": "Não se aplica",
+        "9": "Ignorado"
+      }
+    },
+    "escolaridade": {
+      "source": "CS_ESCOL_N",
+      "default": "Ignorado",
+      "values": {
+        "0": "Analfabeto",
+        "1": "1ª a 4ª série incompleta",
+        "2": "4ª série completa",
+        "3": "5ª à 8ª série incompleta",
+        "4": "Ensino fundamental completo",
+        "5": "Ensino médio incompleto",
+        "6": "Ensino médio completo",
+        "7": "Educação superior incompleta",
+        "8": "Educação superior completa",
+        "9": "Ignorado",
+        "10": "Não se aplica"
+      }
+    },
+    "classificacao_final": {
+      "source": "CLASSI_FIN",
+      "default": "Inconclusivo / Em Investigação",
+      "values": {
+        "1": "Confirmado",
+        "2": "Descartado",
+        "8": "Inconclusivo / Em Investigação"
+      }
+    },
+    "criterio_confirmacao": {
+      "source": "CRITERIO",
+      "default": "Ignorado / Não Preenchido",
+      "values": {
+        "1": "Laboratorial",
+        "2": "Clínico-Epidemiológico",
+        "3": "Em Investigação"
+      }
+    },
+    "evolucao_caso": {
+      "source": "EVOLUCAO",
+      "default": "Ignorado / Em Acompanhamento",
+      "values": {
+        "1": "Cura",
+        "2": "Óbito pelo agravo",
+        "3": "Óbito por outras causas"
+      }
+    },
+    "tipo_autoctonia": {
+      "source": "TPAUTOCTO",
+      "default": "Indeterminado / Ignorado",
+      "values": {
+        "1": "Autóctone",
+        "2": "Importado"
+      }
+    },
+    "doenca_trabalho": {
+      "source": "DOENCA_TRA",
+      "default": "Ignorado",
+      "values": {
+        "1": "Sim",
+        "2": "Não"
+      }
+    }
+  },
+  "ufs": {
+    "11": [
+      "RO",
+      "Rondônia",
+      "Norte"
+    ],
+    "12": [
+      "AC",
+      "Acre",
+      "Norte"
+    ],
+    "13": [
+      "AM",
+      "Amazonas",
+      "Norte"
+    ],
+    "14": [
+      "RR",
+      "Roraima",
+      "Norte"
+    ],
+    "15": [
+      "PA",
+      "Pará",
+      "Norte"
+    ],
+    "16": [
+      "AP",
+      "Amapá",
+      "Norte"
+    ],
+    "17": [
+      "TO",
+      "Tocantins",
+      "Norte"
+    ],
+    "21": [
+      "MA",
+      "Maranhão",
+      "Nordeste"
+    ],
+    "22": [
+      "PI",
+      "Piauí",
+      "Nordeste"
+    ],
+    "23": [
+      "CE",
+      "Ceará",
+      "Nordeste"
+    ],
+    "24": [
+      "RN",
+      "Rio Grande do Norte",
+      "Nordeste"
+    ],
+    "25": [
+      "PB",
+      "Paraíba",
+      "Nordeste"
+    ],
+    "26": [
+      "PE",
+      "Pernambuco",
+      "Nordeste"
+    ],
+    "27": [
+      "AL",
+      "Alagoas",
+      "Nordeste"
+    ],
+    "28": [
+      "SE",
+      "Sergipe",
+      "Nordeste"
+    ],
+    "29": [
+      "BA",
+      "Bahia",
+      "Nordeste"
+    ],
+    "31": [
+      "MG",
+      "Minas Gerais",
+      "Sudeste"
+    ],
+    "32": [
+      "ES",
+      "Espírito Santo",
+      "Sudeste"
+    ],
+    "33": [
+      "RJ",
+      "Rio de Janeiro",
+      "Sudeste"
+    ],
+    "35": [
+      "SP",
+      "São Paulo",
+      "Sudeste"
+    ],
+    "41": [
+      "PR",
+      "Paraná",
+      "Sul"
+    ],
+    "42": [
+      "SC",
+      "Santa Catarina",
+      "Sul"
+    ],
+    "43": [
+      "RS",
+      "Rio Grande do Sul",
+      "Sul"
+    ],
+    "50": [
+      "MS",
+      "Mato Grosso do Sul",
+      "Centro-Oeste"
+    ],
+    "51": [
+      "MT",
+      "Mato Grosso",
+      "Centro-Oeste"
+    ],
+    "52": [
+      "GO",
+      "Goiás",
+      "Centro-Oeste"
+    ],
+    "53": [
+      "DF",
+      "Distrito Federal",
+      "Centro-Oeste"
+    ]
+  },
+  "tables": {
+    "dim_tempo": {
+      "sk_tempo": "INT",
+      "data_completa": "DATE",
+      "ano": "INT",
+      "mes": "INT",
+      "nome_mes": "VARCHAR(20)",
+      "trimestre": "INT",
+      "semana_epidemiologica": "INT",
+      "periodo_sazonal": "VARCHAR(40)"
+    },
+    "dim_localidade": {
+      "sk_localidade": "INT",
+      "cod_uf_ibge": "INT",
+      "sigla_uf": "CHAR(2)",
+      "nome_estado": "VARCHAR(50)",
+      "regiao_brasil": "VARCHAR(20)",
+      "cod_municipio_ibge6": "INT",
+      "cod_regional_saude": "INT"
+    },
+    "dim_unidade_notificadora": {
+      "sk_unidade": "INT",
+      "cod_unidade_cnes": "INT",
+      "cod_uf_notificacao": "INT",
+      "sigla_uf_notificacao": "CHAR(2)",
+      "cod_municipio_notificacao": "INT",
+      "cod_regional_notificacao": "INT"
+    },
+    "dim_paciente": {
+      "sk_paciente": "INT",
+      "sexo": "CHAR(1)",
+      "descricao_sexo": "VARCHAR(20)",
+      "idade_anos": "INT",
+      "faixa_etaria": "VARCHAR(30)",
+      "raca_cor": "VARCHAR(30)",
+      "status_gestante": "VARCHAR(40)",
+      "escolaridade": "VARCHAR(50)"
+    },
+    "dim_investigacao_desfecho": {
+      "sk_desfecho": "INT",
+      "classificacao_final": "VARCHAR(45)",
+      "criterio_confirmacao": "VARCHAR(45)",
+      "evolucao_caso": "VARCHAR(45)",
+      "tipo_autoctonia": "VARCHAR(40)",
+      "doenca_trabalho": "VARCHAR(30)"
+    },
+    "fato_notificacao_zika": {
+      "sk_notificacao": "INT",
+      "fk_tempo_notificacao": "INT",
+      "fk_tempo_sintomas": "INT",
+      "fk_localidade_residencia": "INT",
+      "fk_unidade_notificadora": "INT",
+      "fk_paciente": "INT",
+      "fk_desfecho": "INT",
+      "qt_notificacoes": "INT",
+      "fl_confirmado": "INT",
+      "fl_descartado": "INT",
+      "fl_gestante": "INT",
+      "fl_obito_zika": "INT",
+      "qt_dias_atraso_notif": "INT",
+      "qt_dias_encerramento": "INT"
+    }
+  }
+}
