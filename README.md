@@ -1,6 +1,6 @@
 # Integração de dados — Zika/SINAN (2024–2026)
 
-Projeto de Banco de Dados, CIn/UFPE. Integra `ZIKABR24.csv`, `ZIKABR25.csv` e
+Projeto de Banco de Dados, CIn/UFPE — **2026.2**. Integra `ZIKABR24.csv`, `ZIKABR25.csv` e
 `ZIKABR26.csv` em um esquema estrela com **cinco dimensões e uma fato**.
 Os dois pipelines publicam **o mesmo esquema MySQL, com os mesmos dados e regras**.
 
@@ -8,6 +8,24 @@ Os dois pipelines publicam **o mesmo esquema MySQL, com os mesmos dados e regras
 
 - **ETL:** CSVs → Pandas → filtragem, decodificação e modelagem em memória → esquema estrela MySQL.
 - **ELT:** CSVs → Pandas textual → staging bruto MySQL → consultas SQL com dbt → esquema estrela MySQL.
+
+## Materiais da entrega de 18/11/2026
+
+O [índice de entregáveis](docs/entregaveis.md) reúne os arquivos disponíveis, seu estado
+e as pendências de integração. O relatório ainda recebe resultados das outras frentes;
+os slides e as evidências de execução Colab estão pendentes.
+
+- [Relatório em elaboração — sete seções](docs/relatorio_projeto_integracao.md)
+- [Dicionário completo das seis tabelas](docs/dicionario_de_dados_e_mapeamento_de_divergencias.md)
+- [Esquema estrela — imagem vetorial](docs/figuras/esquema_estrela.svg) e [PNG](docs/figuras/esquema_estrela.png)
+- [Fonte, cobertura e limitações dos CSVs](dados/README_DADOS.md) e [inventário com SHA-256](dados/metadados_fontes.json)
+- [Notebook ETL](notebooks/pipeline_ETL.ipynb), [notebook ELT](notebooks/pipeline_ELT_completo_executado.ipynb) e [análises](notebooks/analises_zika.ipynb)
+- [Validação técnica de 13/11](docs/validacao_pipelines.md) e [revisão de arquitetura de 16/11](docs/evidencias/revisao_arquitetura_16-11.md)
+- [Divisão de tarefas e checklist final](docs/plano_pendencias_18-11.md)
+
+As cinco dimensões e a fato têm seis relações: `dim_tempo` é referenciada nos papéis de
+notificação e sintomas. A fato conta linhas brutas válidas distintas; `dim_paciente`
+representa perfis, sem identificar pessoas. [Detalhes da modelagem](docs/relatorio_projeto_integracao.md#11-arquitetura-do-esquema-estrela).
 
 ## Arquivos
 
@@ -25,6 +43,10 @@ Os dois pipelines publicam **o mesmo esquema MySQL, com os mesmos dados e regras
 | `sql/01_script_ddl_do_esquema_estrela.sql` | DDL MySQL comum com PKs, FKs e checks |
 | `docs/dicionario_de_dados_e_mapeamento_de_divergencias.md` | Dicionário completo e regras de integração |
 | `docs/relatorio_projeto_integracao.md` | Relatório com referência ao dicionário |
+| `dados/metadados_fontes.json` | Inventário dos CSVs, hashes, cobertura e preenchimento |
+| `scripts/auditar_fontes.py` | Reprodução do inventário, sem alterar as fontes |
+| `docs/figuras/esquema_estrela.{dot,svg,png}` | Fonte editável e imagens da modelagem física |
+| `docs/entregaveis.md` | Índice de entrega e pendências por material |
 
 ## Execução local ou Colab
 
@@ -87,6 +109,30 @@ No Colab, clone o repositório, entre em sua raiz com `%cd`, instale com
 `%pip install -r requirements.txt`, configure o MySQL acessível e execute o notebook escolhido
 em ordem. Os notebooks também funcionam quando abertos na pasta `notebooks/` do clone.
 
+Exemplo de preparação em células do Colab:
+
+```python
+!git clone https://github.com/CauaEmano/projeto-integracao-bd-cin.git
+%cd projeto-integracao-bd-cin
+%pip install -r requirements.txt
+```
+
+```python
+import getpass
+import os
+
+os.environ['MYSQL_HOST'] = input('Host MySQL acessível pelo Colab: ').strip()
+os.environ['MYSQL_PORT'] = input('Porta MySQL [3306]: ').strip() or '3306'
+os.environ['MYSQL_USER'] = input('Usuário MySQL: ').strip()
+os.environ['MYSQL_DATABASE'] = input('Banco dedicado já criado: ').strip()
+os.environ['MYSQL_PASSWORD'] = getpass.getpass('Senha MySQL: ')
+```
+
+Depois execute as células do notebook ETL ou ELT dentro do clone. `127.0.0.1` aponta
+para o próprio ambiente Colab, não para o computador pessoal. O acesso ao servidor
+MySQL deve estar configurado para o ambiente escolhido. Este roteiro é uma instrução
+de preparação; a comprovação de execução em Colab acompanha a frente de cada pipeline.
+
 ## Contrato e validação
 
 O [dicionário](docs/dicionario_de_dados_e_mapeamento_de_divergencias.md) contém os tipos,
@@ -113,6 +159,15 @@ Também testa rollback após violação de FK. Os 26 testes do dbt são executad
 
 Os resultados verificados estão em [docs/validacao_pipelines.md](docs/validacao_pipelines.md).
 
+Para refazer o inventário dos arquivos locais, sem dependências Python adicionais:
+
+```bash
+python3 scripts/auditar_fontes.py
+```
+
+A data original de download não foi registrada. A consulta ao portal em 16/11/2026 e
+os hashes locais não comprovam igualdade com a versão atual publicada na fonte.
+
 ## Análises e relatório
 
 Abra `notebooks/analises_zika.ipynb` após concluir um dos fluxos. O notebook consulta o
@@ -120,6 +175,13 @@ esquema final e gera gráficos de sazonalidade, gestantes por UF e tempos da vig
 `saidas/analises/`. O relatório aponta para esse arquivo e para o dicionário.
 2026 é parcial; os números antigos calculados antes da deduplicação devem ser recalculados.
 O PDF comparativo existente é um artefato histórico, não a especificação dos fluxos atuais.
+
+`saidas/` e `dbt/target/` são ignorados pelo Git. Evidências selecionadas para entrega
+devem ir para `docs/evidencias/` e gráficos finais para `docs/figuras/`, com origem e data.
+Os notebooks-fonte ficam sem saídas salvas conforme o teste de limpeza; vincule os logs,
+prints ou cópias executadas externas a partir do [índice de entregáveis](docs/entregaveis.md).
+Os manifestos citados acima são gerados pela CLI; o notebook ETL em etapas imprime
+auditoria e contagens, mas não grava automaticamente aquele manifesto.
 
 ---
 
@@ -130,7 +192,7 @@ O PDF comparativo existente é um artefato histórico, não a especificação do
 | **Cauã Emanuel** | `ceor` | Dupla 1 — Arquitetura & ETL | Concepção da Macroentrega 1, Modelagem Star Schema, Dicionário de Dados, Pipeline ETL |
 | **Allanis Beatriz** | `aboml` | Dupla 1 — Arquitetura & ETL | Desenvolvimento do Notebook Colab ETL, tratamento em Python/Pandas e carga dimensional |
 | **Arthur Gabriel** | `agsl` | Dupla 2 — Engenharia ELT & BD | Configuração do SGBD, carga *Staging* e desenvolvimento do Notebook Colab ELT |
-| **Allan Fernandes** | `afl4` | Dupla 2 — Engenharia ELT & BD | Scripts SQL de transformação interna (`02_transformacoes_elt.sql`) e comparativo ETL vs. ELT |
+| **Allan Fernandes** | `afl4` | Dupla 2 — Engenharia ELT & BD | Transformações SQL em `dbt/models/`, reconciliação e comparativo ETL vs. ELT |
 | **Felipe Melo** | `fma4` | Dupla 3 — Analytics & Docs | Diagrama de fluxo no Draw.io, Consultas SQL e Visualizações das 3 Análises e Insights |
 | **Amanda Pereira** | `apmo` | Dupla 3 — Analytics & Docs | Consolidação do Relatório Final, Evidências Intermediárias e Slides da Apresentação |
 
