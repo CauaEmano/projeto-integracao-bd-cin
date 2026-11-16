@@ -6,40 +6,106 @@ com o mesmo [DDL](../sql/01_script_ddl_do_esquema_estrela.sql).
 O [contrato executável](../pipelines/contrato.json) centraliza colunas, tipos e domínios.
 Os modelos dbt são gerados dele por `python -m pipelines.generate_dbt`.
 
-## 1. Dicionário de Dados do Esquema Estrela
+## 1. Dicionário físico completo do esquema estrela
 
-#### Tabela Fato: `FATO_NOTIFICACAO_ZIKA`
-| Atributo | Tipo de Dado | Restrição | Descrição e Metadados Relevantes |
-| :--- | :--- | :--- | :--- |
-| `sk_notificacao` | `INTEGER` | `PRIMARY KEY` | Chave substituta (*Surrogate Key*) única do registro na tabela fato. |
-| `fk_tempo_notificacao` | `INTEGER` | `FOREIGN KEY` | Referência à `DIM_TEMPO` para a data da notificação (`DT_NOTIFIC`, formato `YYYYMMDD`). |
-| `fk_tempo_sintomas` | `INTEGER` | `FOREIGN KEY` | Referência à `DIM_TEMPO` para a data dos primeiros sintomas (`DT_SIN_PRI`, ou `0` se ausente). |
-| `fk_localidade_residencia`| `INTEGER` | `FOREIGN KEY` | Referência à `DIM_LOCALIDADE` (UF e município de residência do paciente: `SG_UF`, `ID_MN_RESI`). |
-| `fk_unidade_notificadora`| `INTEGER` | `FOREIGN KEY` | Referência à `DIM_UNIDADE_NOTIFICADORA` (CNES, UF e município onde o atendimento foi notificado). |
-| `fk_paciente` | `INTEGER` | `FOREIGN KEY` | Referência à `DIM_PACIENTE` (perfil sociodemográfico: sexo, faixa etária, raça/cor, gestante, escolaridade). |
-| `fk_desfecho` | `INTEGER` | `FOREIGN KEY` | Referência à `DIM_INVESTIGACAO_DESFECHO` (classificação final, critério, evolução, autoctonia). |
-| `qt_notificacoes` | `INTEGER` | `NOT NULL` | Métrica aditiva base ($1$ para cada notificação válida integrada). |
-| `fl_confirmado` | `INTEGER` | `NOT NULL` | Indicador binário ($1$ se `CLASSI_FIN = 1` — Caso Confirmado; $0$ caso contrário). |
-| `fl_descartado` | `INTEGER` | `NOT NULL` | Indicador binário ($1$ se `CLASSI_FIN = 2` — Caso Descartado; $0$ caso contrário). |
-| `fl_gestante` | `INTEGER` | `NOT NULL` | Indicador binário ($1$ se `CS_GESTANT` estiver entre $1$ e $4$ — Paciente Gestante; $0$ caso contrário). |
-| `fl_obito_zika` | `INTEGER` | `NOT NULL` | Indicador binário ($1$ se `EVOLUCAO = 2` — Óbito pelo agravo notificado; $0$ caso contrário). |
-| `qt_dias_atraso_notif` | `INTEGER` | `NULLABLE` | Métrica contínua: diferença em dias entre `DT_NOTIFIC` e `DT_SIN_PRI` ($\text{DT\_NOTIFIC} - \text{DT\_SIN\_PRI}$). |
-| `qt_dias_encerramento` | `INTEGER` | `NULLABLE` | Métrica contínua: diferença em dias entre o encerramento (`DT_ENCERRA`) e a notificação (`DT_NOTIFIC`). |
+![Esquema estrela com as seis tabelas](figuras/esquema_estrela.png)
 
-#### Tabelas Dimensão (`DIM_TEMPO`, `DIM_LOCALIDADE`, `DIM_UNIDADE_NOTIFICADORA`, `DIM_PACIENTE`, `DIM_INVESTIGACAO_DESFECHO`)
-| Tabela Dimensão | Atributos (Colunas) | Descrição e Origem dos Metadados no SINAN |
-| :--- | :--- | :--- |
-| **`DIM_TEMPO`** | `sk_tempo` (PK), `data_completa` (`DATE`), `ano` (`INT`), `mes` (`INT`), `nome_mes` (`VARCHAR`), `trimestre` (`INT`), `semana_epidemiologica` (`INT`), `periodo_sazonal` (`VARCHAR`) | Extraída das datas válidas de `DT_NOTIFIC` e `DT_SIN_PRI`; semana epidemiológica recalculada pela data. Classifica os meses em `'Alta Transmissão (Jan-Mai)'` e `'Baixa Transmissão (Jun-Dez)'`. |
-| **`DIM_LOCALIDADE`** | `sk_localidade` (PK), `cod_uf_ibge` (`INT`), `sigla_uf` (`CHAR(2)`), `nome_estado` (`VARCHAR`), `regiao_brasil` (`VARCHAR`), `cod_municipio_ibge6` (`INT`), `cod_regional_saude` (`INT`) | Extraída de `SG_UF`, `ID_MN_RESI` e `ID_RG_RESI`. Converte os códigos numéricos de UF do IBGE (`11` a `53`) em siglas (`RO` a `DF`), nomes de estados e macrorregiões. |
-| **`DIM_UNIDADE_NOTIFICADORA`** | `sk_unidade` (PK), `cod_unidade_cnes` (`INT`), `cod_uf_notificacao` (`INT`), `sigla_uf_notificacao` (`CHAR(2)`), `cod_municipio_notificacao` (`INT`), `cod_regional_notificacao` (`INT`) | Extraída de `ID_UNIDADE`, `SG_UF_NOT`, `ID_MUNICIP` e `ID_REGIONA`. Permite cruzar o local de residência do paciente com o local efetivo de atendimento médico. |
-| **`DIM_PACIENTE`** | `sk_paciente` (PK), `sexo` (`CHAR(1)`), `descricao_sexo` (`VARCHAR`), `idade_anos` (`INT`), `faixa_etaria` (`VARCHAR`), `raca_cor` (`VARCHAR`), `status_gestante` (`VARCHAR`), `escolaridade` (`VARCHAR`) | Decodifica `CS_SEXO`, `NU_IDADE_N` (convertido de código composto de 4 dígitos para anos e faixas etárias), `CS_RACA`, `CS_GESTANT` e `CS_ESCOL_N`. |
-| **`DIM_INVESTIGACAO_DESFECHO`** | `sk_desfecho` (PK), `classificacao_final` (`VARCHAR`), `criterio_confirmacao` (`VARCHAR`), `evolucao_caso` (`VARCHAR`), `tipo_autoctonia` (`VARCHAR`), `doenca_trabalho` (`VARCHAR`) | Decodifica os domínios epidemiológicos de `CLASSI_FIN`, `CRITERIO`, `EVOLUCAO`, `TPAUTOCTO` e `DOENCA_TRA`. |
+[Diagrama vetorial](figuras/esquema_estrela.svg) · [Fonte editável](figuras/esquema_estrela.dot) · [Inventário das fontes](../dados/README_DADOS.md).
 
+As tabelas abaixo cobrem **todos os atributos físicos** do contrato. `INT` e `INTEGER` são sinônimos no DDL MySQL. “Aceita NULL” descreve a restrição física, independentemente de o pipeline preencher um rótulo padrão. PKs são implicitamente NOT NULL. As seis FKs da fato são NOT NULL; referências desconhecidas usam membros dimensionais, em vez de FK nula.
+
+### `dim_tempo`
+
+| Atributo | Tipo físico | Restrição | Origem / derivação | Descrição |
+|---|---|---|---|---|
+| `sk_tempo` | `INT` | PK / NOT NULL | DT_NOTIFIC / DT_SIN_PRI | Data em YYYYMMDD; 0 para membro desconhecido. |
+| `data_completa` | `DATE` | Aceita NULL | DT_NOTIFIC / DT_SIN_PRI | Data válida observada; NULL no membro desconhecido. |
+| `ano` | `INT` | Aceita NULL | data_completa | Ano civil da data, sem usar NU_ANO. |
+| `mes` | `INT` | Aceita NULL | data_completa | Mês de 1 a 12. |
+| `nome_mes` | `VARCHAR(20)` | Aceita NULL | data_completa | Nome do mês em português; Não Informado no membro 0. |
+| `trimestre` | `INT` | Aceita NULL | data_completa | Trimestre civil de 1 a 4. |
+| `semana_epidemiologica` | `INT` | Aceita NULL | data_completa | Semana por regra domingo/sábado e primeira semana com quatro dias; ver seção 2. |
+| `periodo_sazonal` | `VARCHAR(40)` | Aceita NULL | data_completa | Rótulo fixo Jan–Mai ou Jun–Dez; convenção do projeto, não resultado estatístico. |
+
+### `dim_localidade`
+
+| Atributo | Tipo físico | Restrição | Origem / derivação | Descrição |
+|---|---|---|---|---|
+| `sk_localidade` | `INT` | PK / NOT NULL | Combinação da dimensão | Chave substituta; 0 reservado ao desconhecido. |
+| `cod_uf_ibge` | `INT` | Aceita NULL | SG_UF | Código numérico de residência; zero/ausente/inválido vira NULL. |
+| `sigla_uf` | `CHAR(2)` | NOT NULL | SG_UF + cadastro de UFs | Sigla conhecida ou NI. |
+| `nome_estado` | `VARCHAR(50)` | Aceita NULL | SG_UF + cadastro de UFs | Nome conhecido ou Não Informado. |
+| `regiao_brasil` | `VARCHAR(20)` | Aceita NULL | SG_UF + cadastro de UFs | Macrorregião conhecida ou Não Informado. |
+| `cod_municipio_ibge6` | `INT` | Aceita NULL | ID_MN_RESI | Código de município de residência convertido para inteiro; não valida existência no cadastro municipal. |
+| `cod_regional_saude` | `INT` | Aceita NULL | ID_RG_RESI | Código da regional de residência convertido para inteiro; zero/ausente/inválido vira NULL. |
+
+### `dim_unidade_notificadora`
+
+| Atributo | Tipo físico | Restrição | Origem / derivação | Descrição |
+|---|---|---|---|---|
+| `sk_unidade` | `INT` | PK / NOT NULL | Combinação da dimensão | Chave substituta da combinação de unidade e localização; 0 reservado. |
+| `cod_unidade_cnes` | `INT` | Aceita NULL | ID_UNIDADE | Código CNES convertido para inteiro; zero/ausente/inválido vira NULL. |
+| `cod_uf_notificacao` | `INT` | Aceita NULL | SG_UF_NOT | Código numérico da UF de notificação. |
+| `sigla_uf_notificacao` | `CHAR(2)` | Aceita NULL | SG_UF_NOT + cadastro de UFs | Sigla da UF de notificação conhecida ou NI. |
+| `cod_municipio_notificacao` | `INT` | Aceita NULL | ID_MUNICIP | Código inteiro do município de notificação. |
+| `cod_regional_notificacao` | `INT` | Aceita NULL | ID_REGIONA | Código inteiro da regional de notificação. |
+
+### `dim_paciente`
+
+| Atributo | Tipo físico | Restrição | Origem / derivação | Descrição |
+|---|---|---|---|---|
+| `sk_paciente` | `INT` | PK / NOT NULL | Combinação da dimensão | Chave do perfil, não um identificador individual de paciente; 0 reservado. |
+| `sexo` | `CHAR(1)` | Aceita NULL | CS_SEXO | M, F ou I; desconhecido vira I. |
+| `descricao_sexo` | `VARCHAR(20)` | Aceita NULL | CS_SEXO | Descrição conforme domínio; padrão Ignorado. |
+| `idade_anos` | `INT` | Aceita NULL | NU_IDADE_N | 1000–3999 vira 0; 4000–4120 subtrai 4000; demais NULL. |
+| `faixa_etaria` | `VARCHAR(30)` | Aceita NULL | idade_anos | 0–14, 15–29, 30–44, 45–59, 60+ ou Ignorado. |
+| `raca_cor` | `VARCHAR(30)` | Aceita NULL | CS_RACA | Domínio raça/cor; padrão Ignorado. |
+| `status_gestante` | `VARCHAR(40)` | Aceita NULL | CS_GESTANT | Domínio de gestação; padrão Ignorado. |
+| `escolaridade` | `VARCHAR(50)` | Aceita NULL | CS_ESCOL_N | Domínio de escolaridade; código 0 preserva Analfabeto. |
+
+### `dim_investigacao_desfecho`
+
+| Atributo | Tipo físico | Restrição | Origem / derivação | Descrição |
+|---|---|---|---|---|
+| `sk_desfecho` | `INT` | PK / NOT NULL | Combinação da dimensão | Chave substituta da combinação dos atributos de investigação; 0 reservado. |
+| `classificacao_final` | `VARCHAR(45)` | Aceita NULL | CLASSI_FIN | Domínio de classificação; padrão Inconclusivo / Em Investigação. |
+| `criterio_confirmacao` | `VARCHAR(45)` | Aceita NULL | CRITERIO | Domínio de critério; padrão Ignorado / Não Preenchido. |
+| `evolucao_caso` | `VARCHAR(45)` | Aceita NULL | EVOLUCAO | Domínio de evolução; padrão Ignorado / Em Acompanhamento. |
+| `tipo_autoctonia` | `VARCHAR(40)` | Aceita NULL | TPAUTOCTO | Domínio de autoctonia; padrão Indeterminado / Ignorado. |
+| `doenca_trabalho` | `VARCHAR(30)` | Aceita NULL | DOENCA_TRA | Domínio da relação com trabalho; padrão Ignorado. |
+
+### `fato_notificacao_zika`
+
+| Atributo | Tipo físico | Restrição | Origem / derivação | Descrição |
+|---|---|---|---|---|
+| `sk_notificacao` | `INT` | PK / NOT NULL | Ordem das linhas válidas distintas | Chave substituta sequencial da fato; não é identificador do SINAN. |
+| `fk_tempo_notificacao` | `INT` | FK / NOT NULL | DT_NOTIFIC | FK para dim_tempo.sk_tempo no papel de notificação; data obrigatória válida. |
+| `fk_tempo_sintomas` | `INT` | FK / NOT NULL | DT_SIN_PRI | FK para dim_tempo.sk_tempo no papel de sintomas; 0 quando ausente/inválida. |
+| `fk_localidade_residencia` | `INT` | FK / NOT NULL | Atributos de residência | FK para dim_localidade.sk_localidade. |
+| `fk_unidade_notificadora` | `INT` | FK / NOT NULL | Atributos de notificação | FK para dim_unidade_notificadora.sk_unidade. |
+| `fk_paciente` | `INT` | FK / NOT NULL | Perfil sociodemográfico | FK para dim_paciente.sk_paciente; não identifica pessoa. |
+| `fk_desfecho` | `INT` | FK / NOT NULL | Atributos de investigação | FK para dim_investigacao_desfecho.sk_desfecho. |
+| `qt_notificacoes` | `INT` | NOT NULL | Constante por linha válida | Sempre 1; soma conta linhas da fato. |
+| `fl_confirmado` | `INT` | NOT NULL | CLASSI_FIN | 1 se código 1; 0 nos demais casos. |
+| `fl_descartado` | `INT` | NOT NULL | CLASSI_FIN | 1 se código 2; 0 nos demais casos. |
+| `fl_gestante` | `INT` | NOT NULL | CS_GESTANT | 1 se código 1, 2, 3 ou 4; 0 nos demais. |
+| `fl_obito_zika` | `INT` | NOT NULL | EVOLUCAO | 1 somente se código 2; código 3 não entra. |
+| `qt_dias_atraso_notif` | `INT` | Aceita NULL | DT_NOTIFIC − DT_SIN_PRI | Diferença de 0 a 365 dias; NULL se ausente/inválida/fora do intervalo. |
+| `qt_dias_encerramento` | `INT` | Aceita NULL | DT_ENCERRA − DT_NOTIFIC | Diferença de 0 a 365 dias; NULL se ausente/inválida/fora do intervalo. |
+
+### Restrições e interpretação das medidas
+
+- As seis tabelas usam InnoDB e `utf8mb4_0900_bin`. FKs são aplicadas pelo MySQL, inclusive na publicação transacional.
+- `qt_notificacoes` tem DEFAULT 1 e CHECK igual a 1. As quatro flags têm DEFAULT 0 e CHECK de domínio 0/1. A validação operacional também impede confirmação e descarte simultâneos.
+- Intervalos têm CHECK de 0 a 365; NULL é permitido. A regra de 365 dias é do projeto, não um prazo normativo de investigação.
+- Somas das quantidades e flags contam registros ou subconjuntos de registros. Médias de intervalos desconsideram NULL; publicar o número de observações válidas junto às médias. As contagens não identificam pessoas únicas nem calculam incidência populacional.
+- `dim_paciente` e as demais dimensões de perfil representam combinações de atributos, sem controle histórico SCD. As SKs sequenciais são reproduzíveis para a mesma entrada, mas não são identificadores estáveis entre versões diferentes dos dados.
+- `dim_tempo` reúne as datas observadas de notificação e sintomas; não é um calendário contínuo. A mesma tabela é referenciada duas vezes pela fato.
 
 ## 2. Regras comuns e granularidade
 
 - Uma linha da fato representa uma linha válida distinta do conjunto de **38 campos brutos**.
-  Deduplicação exata entre arquivos, preservando a primeira ocorrência pela ordem arquivo/linha.
+  Deduplicação exata dentro e entre arquivos, preservando a primeira ocorrência pela ordem arquivo/linha.
   Sem identificador único na fonte, não se presume que linhas diferentes sejam o mesmo caso.
 - Os três CSVs usam UTF-8 (BOM tolerado), vírgula e o mesmo cabeçalho de 38 campos.
   ELT armazena todo o texto em `stg_zika` antes de qualquer limpeza, com `arquivo_origem`
@@ -53,7 +119,7 @@ Os modelos dbt são gerados dele por `python -m pipelines.generate_dbt`.
 - Idade: `1000 <= NU_IDADE_N < 4000` vira 0 anos; de 4000 a 4120 subtrai-se 4000;
   qualquer outro código vira NULL. As faixas são **0 a 14**, **15 a 29**, **30 a 44**,
   **45 a 59**, **60 anos ou mais** e **Ignorado**.
-- Códigos textuais inteiros ou com sufixo `.0` são convertidos para inteiro.
+- Códigos textuais não negativos com até nove dígitos, inclusive sufixo decimal composto só de zeros (como `.0`), são convertidos para inteiro após remover espaços nas extremidades.
   Zero em códigos geográficos vira NULL; `CS_ESCOL_N=0` permanece **Analfabeto**.
 - A residência ausente permanece desconhecida, sem inferência a partir do local de atendimento.
   UF sem cadastro recebe `NI` / `Não Informado`; códigos numéricos válidos são preservados.
@@ -63,7 +129,7 @@ Os modelos dbt são gerados dele por `python -m pipelines.generate_dbt`.
   `fl_gestante=(CS_GESTANT em 1,2,3,4)` e `fl_obito_zika=(EVOLUCAO=2)`.
   Óbitos por outras causas (`EVOLUCAO=3`) não compõem `fl_obito_zika`.
 - Dimensões de perfil são combinações distintas de atributos, não pessoas identificadas.
-  As SKs são determinísticas, sequenciais a partir de 1; tempo usa YYYYMMDD.
+  As SKs de perfil são determinísticas para a mesma entrada, sequenciais a partir de 1; tempo usa YYYYMMDD. Não há garantia de estabilidade das SKs entre extrações diferentes.
   Todas as dimensões contêm SK=0 reservado ao membro desconhecido. Datas ausentes referenciam 0.
   Combinações parcialmente desconhecidas conservam seus atributos e recebem SK própria.
 - MySQL 8.0.16+, InnoDB, `utf8mb4_0900_bin`; FKs explícitas e checks no DDL comum.
@@ -228,3 +294,49 @@ permanecem nos CSVs e, no ELT, no staging. Não são criadas flags ou dimensões
 
 Na entrada versionada: 82.460 linhas brutas, 56 duplicatas exatas, 0 rejeições e 82.404 linhas na fato.
 Esses totais são evidências desta versão, não constantes exigidas para novas extrações.
+
+
+## 6. Rastreabilidade dos 38 campos brutos
+
+Todos os campos abaixo participam da deduplicação exata e permanecem nos CSVs e no staging ELT. O destino indica o uso analítico atual; não implica que outros campos sejam apagados da fonte. A fato final não conserva arquivo/linha de origem: esses metadados permanecem na ingestão, no staging ELT e nas rejeições disponíveis.
+
+| Campo bruto | Destino no contrato atual |
+|---|---|
+| `TP_NOT` | Sem promoção à estrela; preservado na fonte/staging e na comparação bruta |
+| `ID_AGRAVO` | Sem promoção à estrela; preservado na fonte/staging e na comparação bruta |
+| `DT_NOTIFIC` | dim_tempo (papel notificação), calendário e métricas da fato |
+| `SEM_NOT` | Sem promoção à estrela; preservado na fonte/staging e na comparação bruta |
+| `NU_ANO` | Sem promoção à estrela; preservado na fonte/staging e na comparação bruta |
+| `SG_UF_NOT` | dim_unidade_notificadora |
+| `ID_MUNICIP` | dim_unidade_notificadora |
+| `ID_REGIONA` | dim_unidade_notificadora |
+| `ID_UNIDADE` | dim_unidade_notificadora |
+| `DT_SIN_PRI` | dim_tempo (papel sintomas) e atraso de notificação |
+| `SEM_PRI` | Sem promoção à estrela; preservado na fonte/staging e na comparação bruta |
+| `ANO_NASC` | Sem promoção à estrela; preservado na fonte/staging e na comparação bruta |
+| `NU_IDADE_N` | dim_paciente.idade_anos / faixa_etaria |
+| `CS_SEXO` | dim_paciente.sexo / descricao_sexo |
+| `CS_GESTANT` | dim_paciente.status_gestante e fato.fl_gestante |
+| `CS_RACA` | dim_paciente.raca_cor |
+| `CS_ESCOL_N` | dim_paciente.escolaridade |
+| `SG_UF` | dim_localidade e cadastro de UFs |
+| `ID_MN_RESI` | dim_localidade.cod_municipio_ibge6 |
+| `ID_RG_RESI` | dim_localidade.cod_regional_saude |
+| `ID_PAIS` | Sem promoção à estrela; preservado na fonte/staging e na comparação bruta |
+| `NDUPLIC_N` | Sem promoção à estrela; preservado na fonte/staging e na comparação bruta |
+| `IN_VINCULA` | Sem promoção à estrela; preservado na fonte/staging e na comparação bruta |
+| `DT_INVEST` | Sem promoção à estrela; preservado na fonte/staging e na comparação bruta |
+| `ID_OCUPA_N` | Sem promoção à estrela; preservado na fonte/staging e na comparação bruta |
+| `CLASSI_FIN` | dim_investigacao_desfecho.classificacao_final e flags confirmado/descartado |
+| `CRITERIO` | dim_investigacao_desfecho.criterio_confirmacao |
+| `TPAUTOCTO` | dim_investigacao_desfecho.tipo_autoctonia |
+| `COUFINF` | Sem promoção à estrela; preservado na fonte/staging e na comparação bruta |
+| `COPAISINF` | Sem promoção à estrela; preservado na fonte/staging e na comparação bruta |
+| `COMUNINF` | Sem promoção à estrela; preservado na fonte/staging e na comparação bruta |
+| `DOENCA_TRA` | dim_investigacao_desfecho.doenca_trabalho |
+| `EVOLUCAO` | dim_investigacao_desfecho.evolucao_caso e fato.fl_obito_zika |
+| `DT_OBITO` | Sem promoção à estrela; preservado na fonte/staging e na comparação bruta |
+| `DT_ENCERRA` | fato.qt_dias_encerramento |
+| `DT_DIGITA` | Sem promoção à estrela; preservado na fonte/staging e na comparação bruta |
+| `TP_SISTEMA` | Sem promoção à estrela; preservado na fonte/staging e na comparação bruta |
+| `TPUNINOT` | Sem promoção à estrela; preservado na fonte/staging e na comparação bruta |

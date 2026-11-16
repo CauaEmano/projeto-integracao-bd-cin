@@ -13,29 +13,53 @@
 
 ---
 
-# Relatório do Projeto de Integração — Banco de Dados
+# Relatório do Projeto de Integração — Banco de Dados — 2026.2
 
 ---
 
 ## 1. Descrição da Base de Dados Unificada (Modelagem Dimensional e Dicionário de Dados)
 
-A base de dados unificada resulta da integração e consolidação de três conjuntos de dados temporais consecutivos (**2024, 2025 e 2026**) provenientes do **Sistema de Informação de Agravos de Notificação (SINAN — Tema 10: Zika Vírus)** do Ministério da Saúde:
-1. **`ZIKABR24.csv` (Ano Base 2024):** Contém as notificações e investigações epidemiológicas de Zika Vírus registradas no Brasil em $2024$ ($43.312$ linhas na extração bruta), distribuídas em $38$ colunas operacionais.
-2. **`ZIKABR25.csv` (Ano Base 2025):** Contém os registros de notificações e investigações de Zika Vírus referentes ao período de $2025$, mantendo a estrutura de $38$ colunas da ficha de notificação individual do SINAN.
-3. **`ZIKABR26.csv` (Ano Base 2026):** Contém os registros mais recentes de notificações de Zika Vírus em $2026$ ($38$ colunas), incluindo casos com investigação ainda em andamento.
+O projeto integra três extrações de notificações de Zika do SINAN, identificadas como 2024, 2025 e 2026. A fonte temática declarada é o [portal do Ministério da Saúde](https://dadosabertos.saude.gov.br/dataset/arboviroses-zika-virus), consultado em 16/11/2026. A data original de download, os endereços diretos dos recursos e eventuais conversões anteriores aos CSVs não foram registrados. A reprodução desta entrega usa os arquivos preservados no repositório, identificados por hashes SHA-256 no [inventário das fontes](../dados/metadados_fontes.json).
 
-### 1.1. Arquitetura do Esquema Estrela (*Star Schema*)
+| Extração | Linhas brutas | Colunas | Intervalo observado de DT_NOTIFIC |
+|---|---:|---:|---|
+| `ZIKABR24.csv` | 43.312 | 38 | 01/01/2024 a 24/02/2025 |
+| `ZIKABR25.csv` | 25.764 | 38 | 29/12/2024 a 12/02/2026 |
+| `ZIKABR26.csv` | 13.384 | 38 | 04/01/2026 a 05/10/2026 |
+| **Total bruto** | **82.460** | **38 campos comuns** | **2026 parcial** |
 
-Para transformar as três tabelas operacionais anuais do SINAN (que possuem códigos numéricos truncados, datas dispersas e atributos mistos de paciente, localidade e investigação na mesma linha) em um repositório analítico de alto desempenho, foi projetado um **Data Warehouse modelado em Esquema Estrela (*Star Schema*)**.
+O cabeçalho é igual nos três arquivos. O ano da data pode diferir do ano indicado no nome: 69 linhas no arquivo de 2024 e 12 no de 2025 apresentam essa situação. Esses dados são preservados e o calendário analítico usa `DT_NOTIFIC`. Os limites de datas não comprovam completude dos períodos. A [documentação das fontes](../dados/README_DADOS.md) detalha o inventário e suas limitações.
 
-A modelagem é composta por **1 Tabela Fato central** (`FATO_NOTIFICACAO_ZIKA`) cercada por **5 Tabelas Dimensão** (`DIM_TEMPO`, `DIM_LOCALIDADE`, `DIM_UNIDADE_NOTIFICADORA`, `DIM_PACIENTE` e `DIM_INVESTIGACAO_DESFECHO`). A granularidade da tabela fato é a **linha válida distinta nos 38 campos brutos das extrações do triênio 2024–2026**, contendo métricas aditivas e indicadores binários (*flags*) que permitem agregações rápidas por período, estado/município, perfil demográfico (como gestantes) e desfecho clínico.
+### 1.1. Arquitetura do esquema estrela
 
-### 1.2. Dicionário de Dados
+O Data Warehouse possui uma tabela fato e cinco dimensões, compartilhadas pelos pipelines ETL e ELT. Os nomes físicos no MySQL são minúsculos.
 
-O dicionário completo, os tipos, as origens e as regras dos dois pipelines estão no
-[arquivo próprio do dicionário](dicionario_de_dados_e_mapeamento_de_divergencias.md).
-O contrato executável é [`pipelines/contrato.json`](../pipelines/contrato.json) e o
-DDL compartilhado é [`sql/01_script_ddl_do_esquema_estrela.sql`](../sql/01_script_ddl_do_esquema_estrela.sql).
+![Esquema estrela: cinco dimensões e uma fato](figuras/esquema_estrela.png)
+
+*Figura 1 — Estrutura física comum aos dois fluxos. As setas saem das FKs da fato para as PKs das dimensões. Fonte: contrato e DDL do projeto. [Versão vetorial](figuras/esquema_estrela.svg) e [fonte editável Graphviz](figuras/esquema_estrela.dot).*
+
+| Tabela | Papel |
+|---|---|
+| `fato_notificacao_zika` | Registro integrado e suas métricas; referencia os seis papéis dimensionais por FK. |
+| `dim_tempo` | Calendário compartilhado por duas FKs: data da notificação e data dos primeiros sintomas. Não são duas tabelas diferentes. |
+| `dim_localidade` | UF, município e regional de residência; permite distinguir residência de atendimento. |
+| `dim_unidade_notificadora` | Unidade CNES e localização da notificação. |
+| `dim_paciente` | Combinação de atributos sociodemográficos e gestacionais, sem identificação de pessoa. |
+| `dim_investigacao_desfecho` | Combinação de classificação, critério, evolução, autoctonia e doença relacionada ao trabalho. |
+
+### 1.2. Granularidade, chaves e medidas
+
+Uma linha da fato representa **uma linha válida distinta nos 38 valores textuais originais**. A deduplicação exata preserva a primeira ocorrência na ordem arquivo/linha. Registros com qualquer diferença de conteúdo permanecem distintos; não se infere identidade de caso ou de pessoa. Mesmo que duas linhas brutas diferentes resultem nos mesmos atributos analíticos, ambas permanecem na fato.
+
+A chave `sk_notificacao` é substituta, não um identificador fornecido pelo SINAN. As dimensões de perfil recebem chaves sequenciais pela ordenação das combinações; `dim_tempo` usa YYYYMMDD. A estabilidade dessas chaves refere-se à mesma entrada e às mesmas regras: elas podem mudar em outra carga. Há um membro desconhecido SK=0 em cada dimensão; sintomas sem data usam essa referência, enquanto combinações de perfil desconhecidas são materializadas com suas próprias SKs.
+
+`qt_notificacoes=1` permite somar registros. As flags de confirmação, descarte, gestação e óbito pelo agravo permitem somas por recorte. Os intervalos de notificação e encerramento são métricas anuláveis: médias usam apenas os valores válidos, devendo ser acompanhadas da quantidade de observações. Nenhuma dessas medidas representa incidência sem denominador populacional.
+
+As seis tabelas usam InnoDB, `utf8mb4_0900_bin`, PKs e seis FKs físicas. O DDL restringe flags a 0/1, quantidade a 1 e intervalos não nulos a 0–365 dias. A publicação carrega dimensões antes da fato e substitui seus conteúdos em uma transação; uma falha provoca rollback. O calendário é formado pelas datas observadas de notificação e sintomas, não por todos os dias de um intervalo contínuo.
+
+### 1.3. Dicionário de dados
+
+O [dicionário completo](dicionario_de_dados_e_mapeamento_de_divergencias.md) integra a documentação do relatório e contém os atributos das seis tabelas, tipos com comprimentos, nulabilidade, origem e regras de cálculo. Ele deve acompanhar qualquer exportação do relatório como anexo ou arquivo vinculado. O [contrato executável](../pipelines/contrato.json) e o [DDL compartilhado](../sql/01_script_ddl_do_esquema_estrela.sql) são as referências físicas para reprodução.
 
 ---
 
@@ -46,7 +70,7 @@ DDL compartilhado é [`sql/01_script_ddl_do_esquema_estrela.sql`](../sql/01_scri
 O processo de integração dos três arquivos anuais (`ZIKABR24.csv`, `ZIKABR25.csv` e `ZIKABR26.csv`) foi estruturado em quatro etapas:
 
 1. **Coleta e Ingestão Unificada:** Leitura dos três arquivos CSV referentes aos anos de $2024$, $2025$ e $2026$, adicionando uma coluna de metadado de rastreabilidade (`arquivo_origem`) para identificar a qual extração anual cada registro pertence originalmente.
-2. **Saneamento de Vazamento Temporal e Deduplicação Interanual:** No SINAN, a extração por ano epidemiológico frequentemente inclui registros da virada do ano seguinte (ex: registros com `NU_ANO = 2025` presentes dentro do arquivo `ZIKABR24.csv` devido à semana epidemiológica `SEM_NOT`). Durante a integração, os três conjuntos são consolidados e deduplicados para evitar dupla contagem de notificações na fronteira entre $2024/2025$ e $2025/2026$.
+2. **Calendário e Deduplicação Exata:** O nome do arquivo pode diferir do ano de `DT_NOTIFIC`, como demonstrado no inventário. O calendário usa a data efetiva, sem descartar essas linhas. A deduplicação compara os 38 campos textuais e remove somente cópias idênticas, dentro ou entre arquivos; linhas diferentes não são presumidas como o mesmo caso.
 3. **Padronização e Decodificação de Domínios:** Conversão das variáveis codificadas numericamente (como `NU_IDADE_N`, `CS_GESTANT`, `CS_RACA`, `CLASSI_FIN`, `CRITERIO`, `EVOLUCAO` e `SG_UF`) em descrições analíticas legíveis para compor as dimensões.
 4. **Geração de Chaves Substitutas (*Surrogate Keys*) e Carga Dimensional:** Povoamento das 5 tabelas dimensão com registros únicos e inserção dos eventos e métricas calculadas na tabela fato `FATO_NOTIFICACAO_ZIKA`.
 
@@ -54,39 +78,50 @@ O processo de integração dos três arquivos anuais (`ZIKABR24.csv`, `ZIKABR25.
 
 ## 3. Justificativa da Escolha da Base de Dados
 
-A escolha da base de dados de **Zika Vírus do SINAN (Tema 10)** abrangendo os três anos consecutivos de **2024, 2025 e 2026** (`ZIKABR24.csv`, `ZIKABR25.csv` e `ZIKABR26.csv`) justifica-se por sua alta relevância epidemiológica nacional e regional, bem como pela aderência exemplar aos requisitos de integração temporal e modelagem dimensional da disciplina de Banco de Dados.
+A base de Zika foi escolhida por reunir notificações de um mesmo tema em três extrações anuais consecutivas e permitir relacionar tempo, residência, atendimento, perfil do paciente e investigação. O [Ministério da Saúde](https://dadosabertos.saude.gov.br/dataset/arboviroses-zika-virus) descreve o SINAN como um sistema de suporte à investigação e à análise da vigilância epidemiológica. No projeto, os campos de gestação e desfecho permitem formular perguntas sobre notificações em gestantes e sua classificação, dentro dos limites da informação disponível.
 
-Do ponto de vista de saúde pública, o monitoramento contínuo do vírus Zika é prioritário no Brasil — e particularmente sensível em Pernambuco e no Nordeste — devido à associação direta entre a infecção aguda em gestantes e o desenvolvimento da Síndrome Congênita do Zika Vírus (incluindo microcefalia e alterações neuropsicomotoras). Analisar três anos consecutivos recentes ($2024$, $2025$ e $2026$) permite avaliar a dinâmica sazonal pós-pandemia, identificar estados com recrudescimento de transmissão e verificar a agilidade da rede de vigilância na confirmação laboratorial de casos em gestantes.
+A estrutura comum de 38 campos facilita a integração sem eliminar os desafios de qualidade. A auditoria encontrou diferenças entre o ano do arquivo e o ano da data de notificação, duplicatas exatas e preenchimento desigual de campos de investigação. Por exemplo, `CLASSI_FIN` está vazio em 537, 433 e 754 registros nos arquivos de 2024, 2025 e 2026, respectivamente. A comparação deve considerar também os tamanhos das extrações. Esses fatos estão registrados no [inventário reprodutível](../dados/metadados_fontes.json).
 
-Do ponto de vista técnico de Engenharia de Dados, os arquivos anuais do SINAN exigem transformações não triviais que evidenciam as diferenças práticas entre **ETL** e **ELT**:
-1. **Codificação Composta de Atributos:** A idade (`NU_IDADE_N`) utiliza uma máscara numérica posicional de 4 dígitos que mistura unidades de tempo (horas, dias, meses e anos) com o valor numérico, exigindo lógica condicional e aritmética para extração da idade real.
-2. **Anomalias de Fronteira Temporal entre Arquivos Anuais:** Os arquivos separados por ano apresentam sobreposição de semanas epidemiológicas e variações significativas na taxa de preenchimento de campos de encerramento (`CLASSI_FIN`, `DT_ENCERRA`, `EVOLUCAO`) conforme o ano se aproxima do período atual ($2026$).
-3. **Riqueza Dimensional Implícita:** Uma única tabela desnormalizada de $38$ colunas oculta múltiplas entidades distintas (Tempo de Notificação, Tempo de Sintomas, Local de Residência, Unidade de Saúde Notificadora, Paciente e Investigação), tornando a decomposição em Esquema Estrela altamente didática e eficiente.
+Do ponto de vista técnico, a escolha permite demonstrar: (a) decodificação de idade composta e domínios; (b) calendário derivado da data efetiva; (c) deduplicação entre e dentro dos arquivos; (d) construção de chaves e dimensões; e (e) tratamento de desconhecidos e intervalos inválidos. Aplicar o mesmo contrato em Python e no MySQL permite comparar ETL e ELT sem atribuir à ordem de processamento diferenças provocadas por regras de negócio incompatíveis.
+
+A organização dimensional dá suporte às três perguntas analíticas do projeto: evolução mensal das notificações; notificações e confirmações em gestantes por UF de residência; e tempos até notificação e encerramento por região. A modelagem foi escolhida para tornar esses cruzamentos explícitos, sem afirmar ganho de desempenho não medido.
+
+Os resultados descrevem a versão local das notificações. O arquivo de 2026 é parcial; investigações podem estar incompletas; não há denominadores populacionais ou identificador único de pessoa/caso na extração. Por isso, o projeto não estima incidência, risco individual, causalidade ou transmissão a partir apenas das contagens, nem considera reduções de contagem como evidência automática de melhora epidemiológica.
 
 ---
 
 ## 4. Descrição dos Processos de Transformação Aplicados
 
-Os dois pipelines seguem as mesmas regras do [dicionário de dados](dicionario_de_dados_e_mapeamento_de_divergencias.md).
-O ETL transforma e modela em Python/Pandas antes da carga no MySQL; o ELT carrega o texto bruto
-no MySQL e transforma por consultas SQL gerenciadas pelo dbt. A publicação usa o mesmo DDL,
-com cinco dimensões e a fato `fato_notificacao_zika`.
+Os dois fluxos implementam o mesmo [contrato](../pipelines/contrato.json). No ETL, `extract`, `transform` e `star` em [pipelines/core.py](../pipelines/core.py) leem o texto, transformam os registros e constroem as dimensões em memória antes da carga. No ELT, o texto é carregado em `stg_zika`, com `arquivo_origem` e `linha_origem`; os [modelos SQL dbt](../dbt/models/) fazem a transformação no MySQL. A publicação de ambos usa o mesmo DDL.
 
-1. Extração dos três CSVs, preservando os 38 campos e registrando arquivo e linha de origem.
-2. Remoção apenas de duplicatas exatas nos 38 campos brutos, independentemente do arquivo anual.
-   Sem identificador único de notificação, registros com diferenças de conteúdo são preservados.
-3. Validação da data real de notificação. Datas obrigatórias inválidas vão à quarentena;
-   datas opcionais inválidas tornam-se nulas. O ano é derivado de `DT_NOTIFIC`.
-4. Conversão dos códigos numéricos (inclusive texto como `26.0`), decodificação dos domínios
-   e idade em anos inteiros; faixas: 0–14, 15–29, 30–44, 45–59, 60+ e Ignorado.
-5. Cálculo dos intervalos de notificação e encerramento, mantendo apenas valores de 0 a 365 dias.
-   Classificações ausentes permanecem em investigação; `fl_obito_zika` considera apenas `EVOLUCAO=2`.
-6. Geração das dimensões, chaves e fatos, seguida de publicação transacional e validação de integridade.
+### 4.1. Regras aplicadas e exemplos
 
-A entrada versionada contém **82.460 linhas**; a deduplicação exata remove **56**, resultando
-em **82.404 notificações válidas**, sem rejeições por data de notificação nesta versão dos CSVs.
-Valores antigos do relatório calculados sobre a base sem deduplicação precisam ser recalculados
-no [notebook de análises](../notebooks/analises_zika.ipynb).
+| Etapa | Regra efetiva | Exemplo de entrada → saída |
+|---|---|---|
+| Leitura | Preservar valores textuais dos 38 campos e acrescentar arquivo/linha de origem | Linha 2 de `ZIKABR24.csv` → metadados de origem na ingestão |
+| Deduplicação | Comparar os 38 textos antes de qualquer conversão, preservando a primeira ocorrência | Duas linhas idênticas em qualquer arquivo → um registro; `26` e `26.0` são diferentes na comparação bruta |
+| Data obrigatória | Remover espaços e validar `DT_NOTIFIC` em YYYY-MM-DD; anos 1000–9999 | `2024-02-30` → quarentena, sem publicação na fato |
+| Datas opcionais | Datas impossíveis/ausentes de sintomas e encerramento tornam-se NULL | Sintomas ausentes → `fk_tempo_sintomas=0` e atraso NULL |
+| Calendário | Usar a data de notificação, não o ano do arquivo ou `NU_ANO` | Data `2025-01-02` em arquivo de 2024 → ano analítico 2025 |
+| Códigos | Converter inteiros textuais e representações com parte decimal zero | `26.0` → 26; escolaridade `0` → Analfabeto |
+| Geografia | Mapear UFs pelo contrato, sem inferir residência pelo atendimento | `SG_UF=26` → PE/Pernambuco/Nordeste; residência vazia → NI/Não Informado |
+| Idade | Códigos 1000–3999 → 0 anos; 4000–4120 → código menos 4000; demais → NULL | `4030.0` → 30 anos / 30 a 44 anos; `4121` → NULL / Ignorado |
+| Domínios | Decodificar sexo, raça/cor, gestação, escolaridade e investigação; usar padrão em valores desconhecidos | `CS_GESTANT=4` → Idade Gestacional Ignorada; `fl_gestante=1` |
+| Indicadores | Confirmação: `CLASSI_FIN=1`; descarte: `=2`; gestação: códigos 1–4; óbito pelo agravo: `EVOLUCAO=2` | `EVOLUCAO=3` → Óbito por outras causas; `fl_obito_zika=0` |
+| Intervalos | Calcular diferença de datas; manter 0–365 dias e converter demais intervalos em NULL | Sintomas posteriores à notificação → atraso NULL, preservando a notificação |
+| Chaves | Gerar dimensões por combinações distintas e publicar suas PKs na fato | Duas datas de uma notificação → duas FKs para `dim_tempo` |
+
+Os exemplos ilustram o contrato e não são apresentados como transcrições de linhas reais dos CSVs. As faixas de idade são 0–14, 15–29, 30–44, 45–59, 60+ e Ignorado. A semana é calculada com início no domingo e primeira semana com pelo menos quatro dias do ano, conforme a regra comum implementada. Os rótulos de sazonalidade Jan–Mai/Jun–Dez são uma classificação fixa do projeto, não uma conclusão demonstrada pelos gráficos.
+
+`ID_AGRAVO` e `COUFINF` participam da comparação bruta para deduplicação e permanecem nos CSVs e no staging ELT; não são atributos promovidos à estrela. O código atual não executa a limpeza dessas colunas descrita no PDF comparativo histórico. O detalhamento de todos os campos usados e não usados consta no dicionário.
+
+### 4.2. Reconciliação, publicação e limites
+
+Na versão auditada, **82.460 brutas = 56 duplicatas exatas + 0 rejeições por data de notificação + 82.404 válidas**. As duplicatas são removidas dentro do conjunto consolidado, inclusive quando pertencem ao mesmo arquivo. O limite de 365 dias é uma regra de qualidade do projeto; não equivale a prazo clínico ou normativo de encerramento.
+
+Campos desconhecidos usam NULL ou os padrões documentados, preservando o registro quando a data obrigatória é válida. Intervalos inválidos não excluem notificações. As dimensões são publicadas antes da fato e a integridade é aplicada pelas FKs do MySQL; a troca dos conteúdos finais é transacional. O ELT mantém staging e modelos intermediários, enquanto o ETL transforma antes da conexão de publicação.
+
+Os seis testes Python foram aprovados em 16/11/2026, incluindo reconciliação, regras de borda e correspondência contrato/DDL/modelos. A validação MySQL de 13/11 está documentada em [validação dos pipelines](validacao_pipelines.md); ela não substitui as evidências da execução Colab que acompanham a entrega. As análises devem usar essa mesma versão deduplicada e explicitar o recorte parcial de 2026.
 
 ---
 
@@ -97,9 +132,9 @@ no [notebook de análises](../notebooks/analises_zika.ipynb).
 | Critério Analisado | Pipeline ETL (Python / Pandas $\rightarrow$ BD) | Pipeline ELT (Carga Staging $\rightarrow$ SQL no SGBD) |
 | :--- | :--- | :--- |
 | **Fluxo de Processamento** | Os 3 CSVs (`2024`, `2025`, `2026`) são lidos, limpos e modelados em *DataFrames* no Pandas antes de inserir no banco. | Os 3 CSVs são carregados diretamente em tabelas brutas (`stg_zika`, com arquivo e linha de origem) e transformados via SQL. |
-| **Decodificação de Domínios (`NU_IDADE_N`, `CS_GESTANT`, UF)** | Realizada via funções vetorizadas do Pandas (`.map()`, `np.select()`). Muito intuitiva para limpeza de tipos mistos. | Realizada via expressões declarativas `CASE WHEN` e `COALESCE` diretamente nas queries `INSERT INTO ... SELECT`. |
+| **Decodificação de Domínios (`NU_IDADE_N`, `CS_GESTANT`, UF)** | Deduplicação com Pandas e decodificação por funções Python e domínios do contrato em `transform`. | Realizada via expressões declarativas `CASE WHEN` e `COALESCE` diretamente nas queries `INSERT INTO ... SELECT`. |
 | **Deduplicação e Geração de Dimensões** | Exige `.drop_duplicates()` em memória e controle manual de índices para gerar as *Surrogate Keys* (`sk_`). | O próprio SGBD garante unicidade via `DISTINCT` / `GROUP BY` e chaves `ROW_NUMBER()`. |
-| **Reprocessamento e Auditoria** | Qualquer mudança em regra de negócio exige reler os CSVs do disco e rodar todo o script Python novamente. | Como os dados brutos já estão persistidos nas tabelas *Staging* do banco, basta reexecutar o script SQL em poucos segundos. |
+| **Reprocessamento e Auditoria** | Qualquer mudança em regra de negócio exige reler os CSVs do disco e rodar todo o script Python novamente. | O staging preserva o texto para auditoria. O comando ELT completo relê os CSVs, recarrega staging e executa dbt; retransformação isolada requer procedimento específico e medição própria. |
 | **Tempo Total de Execução (Colab)** | `[Inserir tempo medido na Macroentrega 3]` | `[Inserir tempo medido na Macroentrega 3]` |
 
 ---
