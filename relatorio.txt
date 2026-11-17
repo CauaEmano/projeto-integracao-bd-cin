@@ -707,7 +707,6 @@ Os testes registrados no repositório comprovaram a equivalência dos resultados
 
 As três análises implementadas demonstram o potencial do Data Warehouse para investigar variações temporais, características das notificações em gestantes e intervalos relacionados aos processos de vigilância epidemiológica.
 Entretanto, a interpretação dos resultados deve considerar as limitações das fontes, especialmente a cobertura parcial de 2026, a ausência de identificadores únicos de indivíduos e o preenchimento incompleto de determinados atributos.
-
 Conclui-se que a integração de dados constitui uma atividade essencial para transformar informações originalmente dispersas em estruturas consistentes e adequadas à análise. O desenvolvimento do projeto reforçou a importância de combinar ferramentas computacionais, modelagem de dados, validação automatizada e conhecimento sobre o domínio estudado para produzir informações confiáveis e interpretáveis.
 
 ## **Referências e materiais técnicos**
