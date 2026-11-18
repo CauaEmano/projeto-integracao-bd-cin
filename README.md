@@ -48,13 +48,15 @@ representa perfis, sem identificar pessoas. [Detalhes da modelagem](docs/relator
 | `docs/figuras/esquema_estrela.{dot,svg,png}` | Fonte editável e imagens da modelagem física |
 | `docs/entregaveis.md` | Índice de entrega e pendências por material |
 
-## Execução local ou Colab
+## Como executar
 
 Requisitos: **Python 3.10–3.12** e **MySQL 8.0.16+** acessível pelo ambiente Python.
 O adapter comunitário `dbt-mysql==1.7.0` usa dbt Core 1.7; as versões estão delimitadas
 em `requirements.txt`. Veja a [documentação do adapter](https://github.com/dbeatty10/dbt-mysql#configuring-your-profile).
 
-Na raiz do clone:
+### Execução local
+
+Com o MySQL instalado e iniciado, na raiz do clone:
 
 ```bash
 python3 -m venv .venv
@@ -105,17 +107,149 @@ As contagens e o tempo de execução ficam em `saidas/etl/manifesto.json` e
 `ZIKA_OUTPUT_DIR` permite trocar a pasta de saída. Rejeições ETL ficam em CSV e rejeições
 ELT em `elt_rejeitados`, com origem e motivo.
 
-No Colab, clone o repositório, entre em sua raiz com `%cd`, instale com
-`%pip install -r requirements.txt`, configure o MySQL acessível e execute o notebook escolhido
-em ordem. Os notebooks também funcionam quando abertos na pasta `notebooks/` do clone.
+### Google Colab com MySQL no próprio ambiente
 
-Exemplo de preparação em células do Colab:
+Abra um notebook no Colab e execute cada bloco em uma célula, na ordem. Neste roteiro,
+o MySQL será instalado dentro do ambiente Colab; portanto, `127.0.0.1` aponta para esse
+servidor. Não é necessário ter MySQL instalado no computador pessoal.
+
+**1. Instalar e iniciar o MySQL**
+
+```python
+!sudo apt-get update -qq
+!sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y mysql-server
+!sudo service mysql start
+!mysql --version
+```
+
+A instalação usa o pacote da distribuição Ubuntu. Veja a
+[documentação de instalação do MySQL no Ubuntu](https://ubuntu.com/server/docs/how-to/databases/install-mysql/).
+Confira se a versão atende ao requisito MySQL 8.0.16+.
+
+**2. Clonar o repositório e instalar as dependências**
 
 ```python
 !git clone https://github.com/CauaEmano/projeto-integracao-bd-cin.git
-%cd projeto-integracao-bd-cin
+%cd /content/projeto-integracao-bd-cin
 %pip install -r requirements.txt
 ```
+
+Se o repositório já estiver clonado nessa sessão, pule a linha `git clone`.
+Use um runtime Python compatível com os requisitos acima.
+
+**3. Criar o banco e configurar a conexão**
+
+Esta célula cria um banco dedicado e um usuário com acesso a ele. A senha é gerada
+automaticamente, mantida em memória e usada pelos pipelines via variáveis de ambiente.
+
+```python
+import os
+import secrets
+import subprocess
+
+senha = secrets.token_hex(16)
+
+sql = f"""
+CREATE DATABASE IF NOT EXISTS zika_dw
+CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_bin;
+
+CREATE USER IF NOT EXISTS 'zika_colab'@'localhost'
+IDENTIFIED BY '{senha}';
+
+ALTER USER 'zika_colab'@'localhost'
+IDENTIFIED BY '{senha}';
+
+GRANT ALL PRIVILEGES ON zika_dw.*
+TO 'zika_colab'@'localhost';
+"""
+
+resultado = subprocess.run(
+    ["sudo", "mysql"],
+    input=sql,
+    text=True,
+    check=True,
+)
+
+os.environ.update({
+    "MYSQL_HOST": "127.0.0.1",
+    "MYSQL_PORT": "3306",
+    "MYSQL_USER": "zika_colab",
+    "MYSQL_PASSWORD": senha,
+    "MYSQL_DATABASE": "zika_dw",
+})
+
+print("Banco e conexão configurados.")
+```
+
+As tabelas finais são criadas pelo pipeline a partir do DDL; não é necessário criá-las
+manualmente. Esse usuário tem acesso ao banco do projeto; ele não é destinado ao teste
+`tests.integration_mysql`, que precisa criar e remover bancos temporários separados.
+
+**4. Testar a conexão**
+
+```python
+from pipelines.database import connect
+
+with connect() as conexao:
+    with conexao.cursor() as cursor:
+        cursor.execute("SELECT VERSION(), DATABASE()")
+        print(cursor.fetchone())
+```
+
+O resultado deve mostrar a versão do MySQL e o banco `zika_dw`. Se essa etapa falhar,
+resolva a conexão antes de executar a carga.
+
+**5. Executar o pipeline escolhido**
+
+Para ELT, com transformação SQL/dbt dentro do MySQL:
+
+```python
+from pipelines.run import run
+
+manifesto = run("elt")
+```
+
+Para ETL, com transformação em Python antes da carga:
+
+```python
+from pipelines.run import run
+
+manifesto = run("etl")
+```
+
+Escolha um dos blocos ou execute-os sequencialmente. **Cada execução substitui o conteúdo
+das seis tabelas finais no banco configurado.** O manifesto apresenta as contagens e o
+tempo total, além de ser salvo em `saidas/etl/` ou `saidas/elt/`.
+
+**6. Conferir o resultado no banco**
+
+```python
+with connect() as conexao:
+    with conexao.cursor() as cursor:
+        cursor.execute("SELECT COUNT(*) FROM fato_notificacao_zika")
+        print("Registros na fato:", cursor.fetchone()[0])
+```
+
+Com os CSVs auditados do projeto, o esperado é **82.404 registros**. Outra versão das fontes
+pode produzir outra contagem. Para as três análises, execute as células de
+[`notebooks/analises_zika.ipynb`](notebooks/analises_zika.ipynb) após a carga.
+
+Para demonstrar os notebooks ETL e ELT em etapas, execute as células dos arquivos em
+`notebooks/` depois de preparar o clone, as dependências e as variáveis acima, no mesmo
+runtime. Os notebooks também funcionam a partir da pasta `notebooks/` do clone. As
+configurações e os imports feitos em um runtime não são transferidos automaticamente
+para outro notebook conectado a um runtime diferente.
+
+Se o ambiente Colab for excluído ou recriado, refaça a preparação: o servidor e os dados
+instalados nele são temporários. Baixe as evidências e os manifestos antes de encerrar a
+sessão. Este roteiro ainda precisa ser validado pela equipe no runtime Colab usado na
+entrega; ele não representa evidência de execução já realizada.
+
+### Google Colab com um servidor MySQL externo
+
+Se a equipe já possui um MySQL acessível pelo Colab, use o clone e as dependências do
+passo 2 e configure a conexão abaixo, em vez de instalar o MySQL localmente e executar
+o passo 3. O banco dedicado deve existir e o usuário deve ter permissões nesse banco.
 
 ```python
 import getpass
@@ -128,10 +262,9 @@ os.environ['MYSQL_DATABASE'] = input('Banco dedicado já criado: ').strip()
 os.environ['MYSQL_PASSWORD'] = getpass.getpass('Senha MySQL: ')
 ```
 
-Depois execute as células do notebook ETL ou ELT dentro do clone. `127.0.0.1` aponta
-para o próprio ambiente Colab, não para o computador pessoal. O acesso ao servidor
-MySQL deve estar configurado para o ambiente escolhido. Este roteiro é uma instrução
-de preparação; a comprovação de execução em Colab acompanha a frente de cada pipeline.
+Em seguida, teste a conexão e execute a carga conforme os passos 4 a 6. Para essa opção,
+`127.0.0.1` não é o endereço do MySQL do computador pessoal: informe o host efetivamente
+acessível pelo runtime Colab.
 
 ## Contrato e validação
 
