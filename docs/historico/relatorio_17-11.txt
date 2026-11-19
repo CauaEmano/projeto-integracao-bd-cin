@@ -1,0 +1,733 @@
+# **Relatório do Projeto de Integração de Dados
+
+**Tema:** Integração e Análise Dimensional das Notificações de Zika Vírus no Brasil no Triênio 2024–2026 (SINAN / Ministério da Saúde)
+
+**Disciplina:** Banco de Dados — 2026.2
+
+**Integrantes:** Cauã Emanuel, Allanis Beatriz, Arthur Gabriel, Allan Fernandes, Felipe Melo e Amanda Pereira.
+
+**Repositório:** [Projeto de Integração de Banco de Dados — GitHub](https://github.com/CauaEmano/projeto-integracao-bd-cin?utm_source=chatgpt.com)
+
+## **Introdução**
+
+-   A integração de dados constitui uma etapa fundamental para transformar informações provenientes de diferentes conjuntos em uma estrutura unificada, consistente e adequada à análise. 
+    No contexto da saúde pública, esse processo possui especial relevância, considerando a necessidade de acompanhar eventos epidemiológicos, identificar padrões de notificação e produzir informações que auxiliem a compreensão da distribuição de doenças.
+
+-   Este projeto tem como objetivo desenvolver um processo de integração dos dados de notificações de Zika vírus no Brasil, utilizando três extrações anuais do Sistema de Informação de Agravos de Notificação (SINAN), referentes aos anos de 2024, 2025 e 2026, disponibilizadas no contexto dos dados abertos do Ministério da Saúde.
+    O trabalho contempla a construção de um Data Warehouse baseado em modelagem dimensional, seguindo a arquitetura de esquema estrela. Para sua implementação, foram desenvolvidos dois pipelines de integração, utilizando as abordagens ETL (*Extract, Transform, Load*) e ELT (*Extract, Load, Transform*), com o objetivo de comparar suas características e verificar a consistência dos resultados.
+
+-   A solução utiliza Python, Pandas, MySQL e dbt, permitindo a extração, padronização, validação, transformação e armazenamento dos registros epidemiológicos. Também foram implementadas consultas analíticas para investigar a distribuição temporal das notificações, o perfil das notificações em gestantes e os intervalos relacionados aos processos de vigilância.
+
+
+## **1. Descrição da Modelagem Dimensional (Esquema Estrela) e Dicionário de Dados**
+
+### **1.1. Caracterização da base de dados**
+
+A base utilizada é composta por três arquivos CSV contendo notificações de Zika, identificados pelos nomes `ZIKABR24.csv`, `ZIKABR25.csv` e `ZIKABR26.csv`.
+A auditoria dos dados identificou a seguinte distribuição:
+
+| Arquivo      | Registros brutos | Atributos            |
+| ------------ | ---------------- | -------------------- |
+| ZIKABR24.csv | 43.312           | 38                   |
+| ZIKABR25.csv | 25.764           | 38                   |
+| ZIKABR26.csv | 13.384           | 38                   |
+| **Total**    | **82.460**       | **38 campos comuns** |
+
+-   Embora os arquivos tenham sido organizados por ano, verificou-se que determinadas notificações apresentavam datas pertencentes a períodos diferentes daqueles indicados no nome do arquivo. 
+    Por esse motivo, a integração utiliza a data efetiva da notificação, representada pelo atributo `DT_NOTIFIC`, como referência temporal das análises.
+    Também foi identificada a presença de 56 registros exatamente duplicados. Após sua remoção e a verificação da validade das datas obrigatórias, a base consolidada passou a conter 82.404 registros.
+
+# Linhas brutas:  82.460
+
+# Duplicatas exatas:  56
+
+# Registros integrados:  82.404
+
+Resultados da validação técnica documentada em 13/11/2026.
+
+
+### **1.2. Estrutura dimensional**
+
+-   A arquitetura adotada é o esquema estrela, composto por uma tabela fato central conectada a cinco tabelas dimensão.
+
+-   A tabela `fato_notificacao_zika` concentra as métricas quantitativas dos registros e possui seis relacionamentos com as dimensões, pois a dimensão temporal desempenha dois papéis: data da notificação e data dos primeiros sintomas.
+
+As dimensões são:
+
+- **dim_tempo:** organiza os registros por datas, meses, anos, trimestres, semanas epidemiológicas e períodos sazonais.
+- **dim_localidade:** descreve a localização de residência do paciente, incluindo município, unidade federativa e região brasileira.
+- **dim_unidade_notificadora:** identifica as características da unidade de saúde responsável pela notificação.
+- **dim_paciente:** reúne atributos sociodemográficos, como sexo, idade, faixa etária, raça/cor, escolaridade e situação gestacional.
+- **dim_investigacao_desfecho:** armazena características relacionadas à investigação, classificação final, critério de confirmação, evolução clínica e autoctonia.
+
+Essa organização permite relacionar os indicadores quantitativos a diferentes perspectivas de análise, reduzindo a necessidade de manipular diretamente todos os campos das planilhas originais.
+
+### **1.3. Granularidade e integridade**
+
+A granularidade da tabela fato corresponde a uma linha válida e distinta considerando os 38 campos textuais originais. 
+Portanto, cada registro da tabela fato representa uma notificação presente na extração consolidada, e não necessariamente uma pessoa ou episódio clínico único.
+
+-   Para identificar os registros das dimensões, foram utilizadas chaves substitutas (*Surrogate Keys*), com prefixo `sk_`. 
+-   Os relacionamentos são realizados por chaves estrangeiras, identificadas pelo prefixo `fk_`.
+
+-   Um registro desconhecido, representado pela chave 0, é reservado em cada dimensão para permitir o tratamento de determinados dados ausentes sem comprometer a integridade referencial.
+
+-   A implementação utiliza o mecanismo InnoDB do MySQL, com chaves primárias, chaves estrangeiras e restrições de domínio. 
+    A presença dessas restrições contribui para evitar referências inexistentes, valores incompatíveis e inconsistências durante o armazenamento.
+
+### **1.4. Dicionário de dados**
+
+O dicionário de dados apresenta os atributos, seus tipos físicos, suas origens e suas finalidades dentro do Data Warehouse. 
+Ao todo, a estrutura implementada contém **49 atributos físicos**, distribuídos pelas seis tabelas.
+
+#### **Dimensão Tempo —&#x20;**`dim_tempo`
+
+Responsável pelas informações temporais das notificações e dos primeiros sintomas.
+
+| Atributo                | Tipo        | Descrição                                  |
+| ----------------------- | ----------- | ------------------------------------------ |
+| `sk_tempo`              | INT         | Chave primária, representada por YYYYMMDD  |
+| `data_completa`         | DATE        | Data completa do evento                    |
+| `ano`                   | INT         | Ano da data                                |
+| `mes`                   | INT         | Mês numérico                               |
+| `nome_mes`              | VARCHAR(20) | Nome do mês                                |
+| `trimestre`             | INT         | Trimestre do ano                           |
+| `semana_epidemiologica` | INT         | Semana epidemiológica calculada            |
+| `periodo_sazonal`       | VARCHAR(40) | Classificação sazonal adotada pelo projeto |
+
+A dimensão temporal possibilita identificar a distribuição dos registros em diferentes períodos. A classificação sazonal utilizada estabelece os intervalos de janeiro a maio e de junho a dezembro, representando uma convenção do projeto, e não uma conclusão estatística sobre a transmissão da doença.
+
+#### **Dimensão Localidade —&#x20;**`dim_localidade`
+
+Armazena informações geográficas relacionadas à residência do paciente.
+
+| Atributo              | Tipo        | Descrição                      |
+| --------------------- | ----------- | ------------------------------ |
+| `sk_localidade`       | INT         | Chave primária da localidade   |
+| `cod_uf_ibge`         | INT         | Código da unidade federativa   |
+| `sigla_uf`            | CHAR(2)     | Sigla do estado                |
+| `nome_estado`         | VARCHAR(50) | Nome do estado                 |
+| `regiao_brasil`       | VARCHAR(20) | Região geográfica brasileira   |
+| `cod_municipio_ibge6` | INT         | Código municipal de residência |
+| `cod_regional_saude`  | INT         | Código da regional de saúde    |
+
+A separação da localização de residência permite análises regionais sem confundir o local onde o paciente mora com a unidade onde a notificação foi registrada.
+
+#### **Dimensão Unidade Notificadora —&#x20;**`dim_unidade_notificadora`
+
+Reúne informações sobre a unidade responsável pelo registro da notificação.
+
+| Atributo                    | Tipo    | Descrição                      |
+| --------------------------- | ------- | ------------------------------ |
+| `sk_unidade`                | INT     | Chave primária da dimensão     |
+| `cod_unidade_cnes`          | INT     | Código da unidade no CNES      |
+| `cod_uf_notificacao`        | INT     | Código da UF notificadora      |
+| `sigla_uf_notificacao`      | CHAR(2) | Sigla da UF notificadora       |
+| `cod_municipio_notificacao` | INT     | Município da notificação       |
+| `cod_regional_notificacao`  | INT     | Regional de saúde notificadora |
+
+Essa dimensão permite comparar a localização de atendimento com a localização de residência, auxiliando na compreensão da distribuição territorial dos registros.
+
+#### **Dimensão Paciente —&#x20;**`dim_paciente`
+
+Representa as características sociodemográficas e gestacionais presentes nas notificações.
+
+| Atributo          | Tipo        | Descrição                  |
+| ----------------- | ----------- | -------------------------- |
+| `sk_paciente`     | INT         | Chave primária do perfil   |
+| `sexo`            | CHAR(1)     | Código de sexo             |
+| `descricao_sexo`  | VARCHAR(20) | Descrição do sexo          |
+| `idade_anos`      | INT         | Idade convertida para anos |
+| `faixa_etaria`    | VARCHAR(30) | Agrupamento etário         |
+| `raca_cor`        | VARCHAR(30) | Raça/cor declarada         |
+| `status_gestante` | VARCHAR(40) | Situação gestacional       |
+| `escolaridade`    | VARCHAR(50) | Nível de escolaridade      |
+
+É importante destacar que a dimensão paciente não identifica indivíduos de maneira única. Seus registros correspondem a combinações distintas de características, permitindo analisar perfis populacionais sem pressupor a existência de um identificador individual.
+
+#### **Dimensão Investigação e Desfecho —&#x20;**`dim_investigacao_desfecho`
+
+Reúne informações referentes à classificação epidemiológica e à evolução dos registros.
+
+| Atributo               | Tipo        | Descrição                                     |
+| ---------------------- | ----------- | --------------------------------------------- |
+| `sk_desfecho`          | INT         | Chave primária                                |
+| `classificacao_final`  | VARCHAR(45) | Classificação final da notificação            |
+| `criterio_confirmacao` | VARCHAR(45) | Critério empregado na investigação            |
+| `evolucao_caso`        | VARCHAR(45) | Evolução registrada                           |
+| `tipo_autoctonia`      | VARCHAR(40) | Indicação de autoctonia                       |
+| `doenca_trabalho`      | VARCHAR(30) | Relação registrada com atividade profissional |
+
+Essa dimensão possibilita distinguir notificações confirmadas, descartadas e em investigação, além de analisar os desfechos disponíveis na base.
+
+#### **Tabela Fato —&#x20;**`fato_notificacao_zika`
+
+Concentra os registros analíticos e as métricas quantitativas.
+
+| Atributo                   | Tipo | Descrição                                   |
+| -------------------------- | ---- | ------------------------------------------- |
+| `sk_notificacao`           | INT  | Chave primária da notificação integrada     |
+| `fk_tempo_notificacao`     | INT  | Referência à data de notificação            |
+| `fk_tempo_sintomas`        | INT  | Referência à data dos sintomas              |
+| `fk_localidade_residencia` | INT  | Referência à localidade                     |
+| `fk_unidade_notificadora`  | INT  | Referência à unidade notificadora           |
+| `fk_paciente`              | INT  | Referência ao perfil do paciente            |
+| `fk_desfecho`              | INT  | Referência ao desfecho                      |
+| `qt_notificacoes`          | INT  | Quantidade unitária de notificações         |
+| `fl_confirmado`            | INT  | Indicador de confirmação                    |
+| `fl_descartado`            | INT  | Indicador de descarte                       |
+| `fl_gestante`              | INT  | Indicador de gestação                       |
+| `fl_obito_zika`            | INT  | Indicador de óbito pelo agravo              |
+| `qt_dias_atraso_notif`     | INT  | Dias entre primeiros sintomas e notificação |
+| `qt_dias_encerramento`     | INT  | Dias entre notificação e encerramento       |
+
+As variáveis iniciadas por `fl_` são indicadores binários, assumindo valores 0 ou 1. Isso permite utilizar funções de agregação, como `SUM()`, para contabilizar registros que atendam a determinadas condições.
+
+Os dois indicadores temporais admitem valores nulos quando não existem datas suficientes ou quando a diferença calculada não respeita o intervalo de validade estabelecido.
+
+### **1.5. Metadados e quantidade de registros por tabela**
+
+A validação técnica documentada em 13 de novembro de 2026 apresentou as seguintes quantidades:
+
+| Tabela                      | Registros |
+| --------------------------- | --------- |
+| `dim_tempo`                 | 1.003     |
+| `dim_localidade`            | 2.562     |
+| `dim_unidade_notificadora`  | 6.631     |
+| `dim_paciente`              | 9.024     |
+| `dim_investigacao_desfecho` | 128       |
+| `fato_notificacao_zika`     | 82.404    |
+
+As quantidades das dimensões incluem o registro reservado para valores desconhecidos, identificado pela chave 0.
+Também foram adotadas configurações de armazenamento e integridade compatíveis com o MySQL 8.0.16 ou superior, utilizando codificação `utf8mb4`, collation `utf8mb4_0900_bin` e mecanismo InnoDB.
+
+-   O projeto documenta a origem, os critérios de transformação e os metadados dos arquivos, incluindo hashes SHA-256. 
+    Esse mecanismo permite verificar a integridade dos arquivos utilizados e identificar eventuais alterações entre diferentes versões dos dados.
+
+
+## **2. Explicação Detalhada do Processo de Integração**
+
+O processo de integração foi desenvolvido para consolidar os três arquivos anuais em uma estrutura analítica padronizada, preservando a rastreabilidade dos registros e garantindo a consistência dos resultados.
+
+### **2.1. Coleta e identificação das fontes**
+
+A fonte temática utilizada foi o conjunto de dados de Zika vírus do SINAN, disponibilizado pelo Ministério da Saúde no portal de dados abertos.
+A equipe trabalhou com três arquivos CSV referentes às extrações de 2024, 2025 e 2026. Esses arquivos foram preservados no diretório `dados/` do repositório, permitindo a reprodução dos processos de integração.
+A documentação informa que a data original de download não foi registrada, assim como os endereços diretos dos recursos obtidos. 
+Por isso, a reprodução técnica utiliza os arquivos versionados no GitHub, cuja integridade pode ser verificada por meio dos metadados produzidos pelo projeto.
+
+### **2.2. Inspeção inicial e auditoria**
+
+Antes da integração, foi realizada a inspeção dos três arquivos para verificar:
+
+- Compatibilidade dos cabeçalhos e tipos de dados.
+- Quantidade de registros e atributos.
+- Presença de valores ausentes e códigos desconhecidos.
+- Duplicações dentro e entre arquivos.
+- Coerência entre o ano do arquivo e a data efetiva de notificação.
+- Possíveis diferenças de preenchimento entre os períodos.
+
+A auditoria verificou que os três CSVs continham os mesmos 38 atributos, na mesma ordem, o que facilitou sua unificação estrutural.
+Entretanto, foram encontradas diferenças de conteúdo. O arquivo de 2024 contém 69 registros com datas de notificação pertencentes a outro ano, enquanto o arquivo de 2025 contém 12 registros nessa condição.
+Também foram identificados valores ausentes em campos relevantes para a investigação epidemiológica, como `CLASSI_FIN`, `DT_ENCERRA` e `EVOLUCAO`.
+Essas diferenças evidenciam a necessidade de executar procedimentos de tratamento antes da utilização das informações para análises comparativas.
+
+### **2.3. Extração dos dados**
+
+A extração foi implementada utilizando Python e a biblioteca Pandas, por meio da função `extract()` presente em `pipelines/core.py`.
+Os arquivos são lidos como texto, preservando inicialmente os valores originais dos atributos. Essa decisão evita que conversões automáticas antecipadas provoquem perda de informações ou alterem a representação dos códigos utilizados pelo SINAN.
+A leitura emprega a codificação `utf-8-sig`, permitindo lidar com arquivos UTF-8 que contenham marca de ordem de bytes (BOM).
+
+Também são criados dois campos de rastreabilidade:
+
+- `arquivo_origem`: identifica o arquivo de procedência do registro.
+- `linha_origem`: identifica sua linha original.
+
+Após a leitura, os três conjuntos são concatenados, formando uma base bruta unificada de 82.460 registros.
+
+### **2.4. Integração temporal**
+
+Uma das decisões mais importantes do processo foi utilizar `DT_NOTIFIC` como referência para a definição do período de cada registro.
+O ano presente no nome dos arquivos é utilizado para identificar a extração original, mas não determina obrigatoriamente o ano analítico da notificação.
+Dessa maneira, registros de 2025 presentes no arquivo de 2024 são contabilizados de acordo com a data real da notificação.
+Essa abordagem evita distorções causadas pela utilização exclusiva dos nomes dos arquivos e permite produzir séries temporais coerentes com os dados observados.
+
+### **2.5. Deduplicação e validação**
+
+Após a consolidação, foi realizada a deduplicação exata dos registros.
+O procedimento compara os 38 campos textuais originais, preservando a primeira ocorrência de cada combinação. 
+A deduplicação é realizada antes das transformações, evitando que registros originalmente diferentes sejam considerados idênticos apenas porque passaram a apresentar os mesmos valores após alguma padronização.
+A comparação identificou 56 duplicatas exatas.
+
+Em seguida, a data obrigatória de notificação foi validada. Registros sem uma data válida seriam encaminhados para rejeição, sem comprometer a integridade do conjunto final.
+Na versão auditada do projeto, nenhuma notificação foi rejeitada por esse critério.
+
+O resultado da reconciliação foi:
+
+\\[ 82.460-56-0=82.404 \\]
+
+Portanto, a base consolidada contém 82.404 registros válidos e distintos segundo o critério estabelecido.
+
+### **2.6. Transformação e padronização**
+
+Os registros válidos são submetidos a procedimentos de conversão, decodificação e derivação de atributos analíticos.
+Entre eles estão a conversão de datas, a padronização de códigos numéricos, o mapeamento das unidades federativas, a interpretação das idades codificadas e a classificação de variáveis epidemiológicas.
+
+-   As mesmas regras são utilizadas nos pipelines ETL e ELT, garantindo que as diferenças entre as arquiteturas estejam relacionadas principalmente ao local de execução das transformações.
+
+### **2.7. Construção do esquema estrela**
+
+Após o tratamento, são geradas as cinco dimensões, utilizando as combinações distintas dos atributos que correspondem a cada perspectiva analítica.
+Para permitir a ligação entre os registros, são criadas chaves substitutas. A dimensão temporal utiliza a representação numérica da data, enquanto as demais dimensões recebem identificadores sequenciais.
+
+Na sequência, a tabela fato é construída com as seis referências dimensionais, os indicadores binários e as métricas temporais.
+Essa estrutura permite executar consultas analíticas por período, região, perfil populacional e classificação epidemiológica sem necessidade de reconstruir repetidamente as regras de tratamento.
+
+### **2.8. Carga e consolidação no MySQL**
+
+O banco final utiliza o esquema físico compartilhado disponível em `sql/01_script_ddl_do_esquema_estrela.sql`.
+
+A publicação dos dados respeita as dependências entre as tabelas, inserindo as dimensões antes da tabela fato.
+As operações de publicação dos conteúdos finais são realizadas em uma transação. Dessa forma, se ocorrer uma falha de integridade durante a operação, o banco executa um rollback, preservando os dados anteriormente publicados.
+
+-   Os dois pipelines compartilham a mesma estrutura final. O ETL realiza o tratamento antes da carga, enquanto o ELT mantém os registros brutos em uma tabela intermediária do banco e utiliza transformações SQL para produzir os dados modelados.
+
+### **2.9. Validação e testes**
+
+A etapa de validação contempla a reconciliação das quantidades, a integridade referencial, a consistência das regras de domínio e a equivalência dos resultados produzidos pelos dois pipelines.
+Na validação documentada em 13 de novembro de 2026, foram executados 11 modelos dbt, com aprovação de 26 testes. Também foi registrada a comparação integral das seis tabelas resultantes dos processos ETL e ELT, verificando correspondência entre seus atributos, indicadores e chaves.
+
+Em 16 de novembro de 2026, a revisão de arquitetura documentou a aprovação de seis testes Python relacionados às regras de transformação, reconciliação, contratos e estrutura.
+
+O projeto também contempla a verificação de casos de borda, como datas impossíveis, códigos desconhecidos, valores nulos e intervalos temporais inválidos.
+Essas verificações contribuem para a confiabilidade do processo, embora não substituam a necessidade de executar novamente os pipelines quando houver modificações nos dados ou nas regras de transformação.
+
+## **3. Justificativa da Escolha da Base de Dados**
+
+A escolha das notificações de Zika vírus como objeto de estudo foi motivada por sua relevância epidemiológica e pela possibilidade de explorar problemas reais de integração de dados públicos.
+
+### **3.1. Relevância para a saúde pública**
+
+O Zika vírus constitui um tema importante para a vigilância epidemiológica brasileira, especialmente por seus impactos potenciais sobre a saúde materno-infantil e pela necessidade de monitoramento de notificações e investigações.
+A utilização dos registros do SINAN permite estudar como informações provenientes de diferentes períodos podem ser organizadas para apoiar análises descritivas sobre a distribuição temporal, territorial e sociodemográfica das notificações.
+O atributo referente à situação gestacional, em particular, amplia as possibilidades analíticas da base, permitindo investigar como as notificações e confirmações se distribuem entre mulheres registradas como gestantes.
+
+### **3.2. Disponibilidade e possibilidade de reprodução**
+
+Outro fator importante foi a disponibilidade dos arquivos em formato CSV, amplamente compatível com ferramentas de manipulação e integração de dados.
+
+A preservação dos três arquivos no repositório permite reproduzir a integração com entradas determinadas, enquanto o inventário de metadados possibilita verificar sua integridade.
+Embora a proveniência original apresente limitações documentais, a existência de arquivos de entrada versionados favorece a reprodutibilidade dos resultados do projeto.
+
+### **3.3. Diversidade de atributos**
+
+A base possui informações temporais, territoriais, sociodemográficas e epidemiológicas.
+Essa diversidade tornou possível a construção de uma modelagem dimensional com diferentes perspectivas analíticas, incluindo residência, unidade notificadora, perfil do paciente e classificação do registro.
+A existência de datas de notificação, primeiros sintomas e encerramento também permitiu desenvolver indicadores relacionados a intervalos do processo de vigilância.
+
+### **3.4. Adequação aos objetivos de integração**
+
+A utilização de três extrações anuais permitiu identificar desafios característicos de sistemas de integração, como duplicações, valores ausentes, códigos especiais e sobreposições temporais.
+Mesmo apresentando o mesmo conjunto de 38 colunas, os arquivos possuíam diferenças relevantes de preenchimento e distribuição dos registros.
+Esse cenário foi adequado para demonstrar que a integração não consiste apenas em concatenar tabelas, mas também em definir regras para garantir que os dados resultantes sejam interpretáveis e consistentes.
+
+### **3.5. Adequação à comparação ETL e ELT**
+
+A base também possibilitou aplicar duas arquiteturas de processamento ao mesmo conjunto de informações.
+Com regras compartilhadas e uma estrutura de destino idêntica, foi possível comparar a execução das transformações em memória, utilizando Python e Pandas, com sua realização dentro do MySQL, por meio de comandos SQL organizados com dbt.
+
+-   Assim, a escolha da base atendeu tanto aos objetivos de análise epidemiológica quanto aos objetivos técnicos da disciplina de Banco de Dados.
+
+## **4. Descrição dos Processos de Transformação Aplicados**
+
+As transformações foram definidas para garantir consistência, interpretação adequada dos códigos de origem e compatibilidade com o esquema dimensional.
+
+O projeto centraliza as principais regras em `pipelines/contrato.json`, utilizado como referência para os dois pipelines.
+
+### **4.1. Padronização dos tipos de dados**
+
+Inicialmente, os dados são preservados como texto. Posteriormente, os campos são convertidos para os tipos adequados.
+Os códigos numéricos são interpretados por uma rotina que remove espaços externos e aceita representações com parte decimal composta apenas por zeros.
+Por exemplo, o valor textual `26.0` pode ser interpretado como o inteiro 26 durante a padronização.
+Essa regra evita perdas indevidas de registros em situações nas quais códigos inteiros foram representados como números decimais.
+
+Valores que não atendem às regras previstas são classificados como ausentes para os atributos numéricos derivados.
+
+### **4.2. Tratamento de datas**
+
+As datas são validadas de acordo com o formato `YYYY-MM-DD`.
+
+A data de notificação é obrigatória para a publicação do registro na tabela fato. Quando ausente ou inválida, o registro é encaminhado para rejeição.
+Em contrapartida, as datas de primeiros sintomas e de encerramento são opcionais. Quando essas informações estão ausentes ou inválidas, os respectivos atributos derivados recebem `NULL`, sem excluir a notificação.
+Essa distinção permite preservar a maior quantidade possível de registros sem comprometer os indicadores temporais.
+
+### **4.3. Decodificação da idade**
+
+O atributo `NU_IDADE_N` utiliza uma codificação específica, exigindo interpretação antes de sua utilização analítica.
+
+O projeto aplica as seguintes regras:
+
+| Código original             | Transformação                |
+| --------------------------- | ---------------------------- |
+| 1000 a 3999                 | Idade convertida para 0 anos |
+| 4000 a 4120                 | Subtração de 4000            |
+| Fora dos intervalos aceitos | Idade desconhecida           |
+
+Por exemplo, `4030` representa 30 anos na estrutura utilizada pelo projeto.
+
+Após a conversão, os pacientes são organizados nas faixas etárias de 0 a 14 anos, 15 a 29 anos, 30 a 44 anos, 45 a 59 anos, 60 anos ou mais e idade ignorada.
+A classificação em faixas permite realizar agregações por perfil etário sem manipular diretamente os códigos originais.
+
+### **4.4. Padronização geográfica**
+
+Os códigos das unidades federativas são associados às respectivas siglas, nomes e regiões geográficas.
+Por exemplo, o código 26 corresponde a Pernambuco, identificado pela sigla PE e pertencente à região Nordeste.
+Quando a unidade federativa não pode ser identificada, são utilizados os valores `NI` e `Não Informado`, sem inferir a residência a partir do local de atendimento.
+
+-   Essa decisão preserva a diferença entre a informação observada e uma informação que seria apenas estimada.
+
+### **4.5. Tratamento de variáveis categóricas**
+
+Diversos atributos do SINAN utilizam códigos numéricos para representar categorias epidemiológicas.
+Esses códigos são transformados em descrições textuais, tornando as informações mais compreensíveis para consultas e visualizações.
+
+Exemplos:
+
+| Variável     | Valor original | Valor transformado         |
+| ------------ | -------------- | -------------------------- |
+| `CS_RACA`    | 4              | Parda                      |
+| `CS_GESTANT` | 1              | 1º Trimestre               |
+| `CS_GESTANT` | 4              | Idade Gestacional Ignorada |
+| `CS_ESCOL_N` | 0              | Analfabeto                 |
+| `CLASSI_FIN` | 1              | Confirmado                 |
+| `CLASSI_FIN` | 2              | Descartado                 |
+| `CRITERIO`   | 1              | Laboratorial               |
+| `EVOLUCAO`   | 1              | Cura                       |
+| `EVOLUCAO`   | 2              | Óbito pelo agravo          |
+| `TPAUTOCTO`  | 1              | Autóctone                  |
+
+Quando determinado código é inválido, desconhecido ou não preenchido, o pipeline utiliza uma categoria padrão adequada ao atributo.
+
+-   O tratamento evita que categorias desconhecidas sejam confundidas com valores válidos conhecidos.
+
+### **4.6. Construção de indicadores binários**
+
+Para facilitar a realização de consultas analíticas, foram criados indicadores quantitativos derivados dos atributos originais.
+
+-   O indicador `fl_confirmado` recebe 1 quando a classificação final corresponde ao código 1 e 0 nos demais casos.
+
+-   O indicador `fl_descartado` recebe 1 quando a classificação final corresponde ao código 2.
+
+-   O indicador `fl_gestante` recebe 1 quando o código de gestação pertence ao conjunto 4, incluindo as notificações cuja idade gestacional é ignorada.
+
+-   O indicador `fl_obito_zika` recebe 1 exclusivamente quando o atributo de evolução apresenta o código 2, correspondente a óbito pelo agravo. Óbitos registrados por outras causas não são contabilizados nesse indicador.
+
+Essas regras permitem realizar agregações com `SUM()`, mantendo a interpretação dos resultados vinculada aos critérios definidos no contrato de transformação.
+
+### **4.7. Cálculo dos intervalos temporais**
+
+O projeto calcula dois indicadores relacionados ao processo de vigilância epidemiológica.
+
+O primeiro corresponde ao intervalo entre os primeiros sintomas e a data da notificação:
+\\[ D\_{\text{notificação}}=DT\\\_NOTIFIC-DT\\\_SIN\\\_PRI \\]
+
+O segundo corresponde ao intervalo entre a data da notificação e a data de encerramento:
+\\[ D\_{\text{encerramento}}=DT\\\_ENCERRA-DT\\\_NOTIFIC \\]
+
+Os valores são mantidos apenas quando estão no intervalo de 0 a 365 dias, inclusive.
+
+Resultados negativos, superiores a 365 dias ou calculados com datas ausentes são transformados em `NULL`.
+
+-   Essa regra representa um critério de qualidade estabelecido pelo projeto e não deve ser interpretada como prazo clínico ou normativo de encerramento.
+
+### **4.8. Deduplicação**
+
+A deduplicação é realizada comparando os valores textuais originais dos 38 campos.
+O procedimento mantém a primeira ocorrência e elimina apenas registros totalmente idênticos.
+
+-   Isso é especialmente importante porque dois registros semelhantes podem representar notificações distintas. Como os arquivos não disponibilizam um identificador único suficiente para determinar identidade de caso, o projeto não elimina registros apenas por apresentarem características sociodemográficas ou epidemiológicas semelhantes.
+
+### **4.9. Tratamento de valores ausentes**
+
+O tratamento de dados ausentes considera a finalidade de cada atributo.
+Datas obrigatórias inválidas implicam rejeição do registro. Datas opcionais inválidas são representadas por `NULL`. Valores categóricos desconhecidos são associados a rótulos específicos e referências dimensionais ausentes podem utilizar os membros reservados com chave 0.
+
+-   A estratégia permite diferenciar informações desconhecidas de informações efetivamente observadas, preservando a integridade do banco.
+
+### **4.10. Validação das transformações**
+
+Para verificar o comportamento das transformações, foram implementados testes relacionados à interpretação dos códigos, às faixas etárias, à reconciliação de registros, à integridade referencial e à equivalência entre os resultados dos dois pipelines.
+A comparação integral realizada durante a validação registrada confirmou que os pipelines ETL e ELT produziram os mesmos dados finais para a entrada utilizada.
+
+-   Esse resultado demonstra que as regras de transformação foram aplicadas de maneira consistente entre as duas implementações.
+
+## **5. Comparativo entre ETL e ELT**
+
+A implementação de duas arquiteturas de integração constitui uma das principais contribuições técnicas do projeto. Embora ambos os pipelines utilizem as mesmas fontes, regras e estrutura final, eles diferem na ordem das operações e no ambiente em que ocorre o processamento.
+
+### **5.1. Pipeline ETL — Extract, Transform, Load**
+
+Na abordagem ETL, a extração é seguida pela transformação dos registros, sendo a carga no banco realizada somente após a conclusão do tratamento.
+
+Extração:  CSV
+
+Transformação:  Python / Pandas
+
+Carga:  MySQL
+
+O pipeline implementado no projeto utiliza as funções `extract()`, `transform()` e `star()` presentes em `pipelines/core.py`.
+
+Inicialmente, os três arquivos CSV são lidos e concatenados em memória. Em seguida, são executados os procedimentos de deduplicação, conversão de tipos, padronização de domínios, interpretação de datas e construção dos atributos derivados.
+Após o tratamento, são geradas as dimensões e a tabela fato, com suas respectivas chaves substitutas e estrangeiras.
+Somente depois da conclusão dessas etapas os dados são publicados no MySQL.
+
+-   Essa abordagem apresenta como vantagem a flexibilidade da linguagem Python e das bibliotecas de manipulação de dados. As transformações podem ser organizadas em funções, facilitando a compreensão e os testes de regras específicas.
+    Entretanto, o processamento depende da memória e dos recursos computacionais do ambiente Python. Em bases maiores, o armazenamento intermediário de dados em memória pode representar uma limitação.
+
+### **5.2. Pipeline ELT — Extract, Load, Transform**
+
+Na abordagem ELT, os registros são primeiramente extraídos e carregados em uma área intermediária do banco de dados. As transformações são executadas posteriormente, dentro do próprio SGBD.
+
+Extração:  CSV
+
+Carga:  Staging MySQL
+
+Transformação:  SQL / dbt
+
+No projeto, os registros são carregados na tabela `stg_zika`, mantendo os 38 atributos originais e os metadados de procedência.
+A partir dessa estrutura, o dbt organiza a execução dos modelos SQL responsáveis pelas transformações.
+
+O processamento contempla as seguintes etapas intermediárias:
+
+- `stg_zika_unica`: deduplicação dos registros originais.
+- `int_zika`: separação entre registros válidos e registros rejeitados.
+- `int_zika_tipificada`: conversão de tipos e interpretação de datas e códigos.
+- `int_zika_decodificada`: padronização e decodificação dos atributos analíticos.
+
+Posteriormente, os modelos `elt_dim_*` e `elt_fato_notificacao_zika` constroem a estrutura dimensional resultante.
+
+As consultas SQL empregam operações como `CASE WHEN`, `COALESCE`, `DISTINCT` e `ROW_NUMBER()`, de acordo com as regras de transformação e a necessidade de construção das dimensões.
+-   A principal vantagem dessa abordagem consiste em utilizar os recursos do próprio SGBD para processar os registros, mantendo uma camada intermediária que favorece a auditoria e o reprocessamento.
+-   Como desvantagem, o ELT exige maior atenção à configuração do banco, ao gerenciamento das dependências entre modelos e à utilização dos recursos computacionais disponíveis no servidor.
+
+### **5.3. Comparação técnica**
+
+| Critério                            | ETL                             | ELT                                   |
+| ----------------------------------- | ------------------------------- | ------------------------------------- |
+| Ordem de execução                   | Extrair, transformar e carregar | Extrair, carregar e transformar       |
+| Principal ambiente de transformação | Python / Pandas                 | MySQL / SQL / dbt                     |
+| Armazenamento intermediário         | Memória do ambiente Python      | Tabelas do banco                      |
+| Deduplicação                        | `drop_duplicates()`             | Operações SQL                         |
+| Conversão de atributos              | Funções Python                  | Expressões SQL                        |
+| Construção das dimensões            | Python                          | Modelos SQL                           |
+| Auditoria de dados brutos           | Arquivos de origem e metadados  | Staging e metadados                   |
+| Dependência de memória              | Maior no ambiente Python        | Maior utilização dos recursos do SGBD |
+| Estrutura final                     | Esquema estrela MySQL           | Mesmo esquema estrela MySQL           |
+| Resultado validado                  | 82.404 registros                | 82.404 registros                      |
+
+### **5.4. Comparação de desempenho**
+
+A comparação de desempenho deve considerar o tempo total necessário para executar cada pipeline, incluindo extração, transformação, carga e validações correspondentes.
+O projeto implementa a medição de duração utilizando `time.perf_counter()` e registra os resultados no campo `duracao_segundos` dos arquivos `manifesto.json` gerados por `pipelines/run.py`.
+Entretanto, os materiais atualmente versionados não apresentam duas medições finais diretamente comparáveis de execução ponta a ponta no Google Colab.
+Consequentemente, não é possível afirmar, com base nas evidências disponíveis, que uma das arquiteturas apresentou desempenho superior à outra.
+Também é importante destacar que o tempo isolado de execução dos modelos dbt não equivale ao tempo completo do processo ELT.
+
+### **5.5. Validação de equivalência**
+
+A validação técnica realizada em 13 de novembro de 2026 comparou integralmente as seis tabelas resultantes dos dois pipelines, ordenadas por suas respectivas chaves primárias.
+A comparação verificou os atributos dimensionais, indicadores quantitativos, referências e chaves substitutas.
+O resultado documentado confirmou equivalência integral entre as estruturas produzidas pelos pipelines ETL e ELT, além da aprovação dos testes de integridade e reconciliação.
+Portanto, ambos demonstraram capacidade de produzir o mesmo resultado analítico a partir das regras estabelecidas.
+
+### **5.6. Adequação ao contexto do projeto**
+
+Considerando as características da base e os objetivos da disciplina, ambas as abordagens se mostraram adequadas.
+
+-   O ETL foi especialmente útil para representar e compreender as transformações de maneira procedural, permitindo organizar as regras em funções Python e inspecionar as estruturas intermediárias.
+
+-   O ELT permitiu explorar os recursos do MySQL para o processamento dos registros, além de introduzir uma organização declarativa das transformações por meio do dbt.
+
+A implementação paralela demonstrou que a escolha de uma arquitetura deve considerar as características dos dados, os recursos disponíveis, os requisitos de auditoria e manutenção e a necessidade de reprocessamento.
+Assim, a principal conclusão da comparação é que **ETL e ELT podem produzir resultados equivalentes, embora apresentem diferenças importantes na organização e na execução do processamento**.
+
+## **6. Apresentação de Três Análises e Insights**
+
+Após a construção do esquema estrela, foram implementadas três análises destinadas a explorar diferentes perspectivas dos dados epidemiológicos.
+As consultas e rotinas de visualização estão disponíveis no notebook `notebooks/analises_zika.ipynb`, que utiliza Pandas e Matplotlib para apresentar os resultados das consultas SQL.
+É importante distinguir as análises implementadas dos resultados quantitativos finais: o notebook versionado contém as três consultas e os códigos dos gráficos, mas não contém as tabelas resultantes nem os valores numéricos de suas execuções salvos. 
+Assim, são apresentados os objetivos, os métodos e os insights metodológicos sustentados pela implementação, sem atribuir aos dados conclusões quantitativas ainda não comprovadas.
+
+### **6.1. Análise 1 — Evolução temporal e sazonalidade das notificações**
+
+**Objetivo:** investigar a distribuição mensal das notificações de Zika no período de 2024 a 2026, identificando variações temporais e possíveis padrões sazonais.
+
+A consulta relaciona a tabela fato com a dimensão temporal, utilizando a data efetiva da notificação para agrupar os registros por ano e mês.
+
+A quantidade de notificações é calculada pela soma de `qt_notificacoes`.
+
+```
+SELECT
+    t.ano,
+    t.mes,
+    SUM(f.qt_notificacoes) AS notificacoes
+FROM fato_notificacao_zika f
+INNER JOIN dim_tempo t
+    ON t.sk_tempo = f.fk_tempo_notificacao
+GROUP BY t.ano, t.mes
+ORDER BY t.ano, t.mes;
+```
+
+A consulta permite construir um gráfico de linhas no qual o eixo horizontal representa os meses e o eixo vertical apresenta a quantidade de notificações, utilizando séries distintas para os anos observados.
+
+**Insight e interpretação:** A principal contribuição dessa análise é possibilitar a identificação de concentrações mensais, variações entre períodos e diferenças entre as séries anuais.
+
+A auditoria demonstrou que os arquivos anuais não correspondem necessariamente a anos civis isolados. Portanto, a utilização de `DT_NOTIFIC` evita classificar indevidamente notificações em anos diferentes daqueles em que foram registradas.
+
+Outro aspecto importante é a cobertura parcial de 2026, cujo último registro observado corresponde a 5 de outubro de 2026. Dessa maneira, a comparação do total de notificações de 2026 com os totais de anos anteriores exige cautela.
+Uma comparação mais adequada pode utilizar intervalos equivalentes, por exemplo, os mesmos meses de cada ano, desde que seja verificada a completude desses períodos.
+
+As contagens mensais também não representam taxas de incidência, pois não são ajustadas pela população sob risco.
+
+### **6.2. Análise 2 — Notificações de Zika em gestantes por unidade federativa**
+
+**Objetivo:** investigar a distribuição territorial das notificações que envolvem gestantes e identificar, entre esses registros, aqueles classificados como confirmados.
+
+A análise relaciona a tabela fato com a dimensão localidade, utilizando a unidade federativa de residência.
+
+O indicador `fl_gestante` identifica os registros considerados gestacionais, enquanto a multiplicação pelos valores de `fl_confirmado` permite contabilizar aqueles que atendem simultaneamente às duas condições.
+
+```
+SELECT
+    l.sigla_uf,
+    SUM(f.fl_gestante) AS gestantes,
+    SUM(f.fl_gestante * f.fl_confirmado)
+        AS confirmadas
+FROM fato_notificacao_zika f
+INNER JOIN dim_localidade l
+    ON l.sk_localidade =
+       f.fk_localidade_residencia
+GROUP BY l.sigla_uf
+ORDER BY gestantes DESC;
+```
+
+Os resultados são organizados em um gráfico de barras, comparando a quantidade de notificações em gestantes e a quantidade classificada como confirmada em cada unidade federativa.
+
+**Insight e interpretação:** A análise demonstra a importância de considerar simultaneamente a distribuição geográfica e a classificação epidemiológica das notificações.
+
+Ao separar o total de registros envolvendo gestantes daqueles classificados como confirmados, torna-se possível avaliar diferenças na composição dos registros disponíveis.
+
+A análise também permite identificar quais unidades federativas apresentam maiores quantidades absolutas de notificações no conjunto estudado, após a execução da consulta.
+Entretanto, uma quantidade maior de registros não implica necessariamente maior risco de infecção, pois os estados apresentam populações distintas e podem possuir diferentes condições de vigilância e notificação.
+
+Além disso, os registros cuja unidade federativa não foi informada são preservados na categoria `NI`, evitando sua exclusão silenciosa das agregações.
+
+A preservação desses registros é importante para a transparência dos resultados e para a avaliação da qualidade das informações geográficas.
+
+### **6.3. Análise 3 — Tempo de notificação e encerramento por região**
+
+**Objetivo:** comparar os intervalos médios entre o início dos sintomas e a notificação, assim como entre a notificação e o encerramento, considerando as regiões brasileiras.
+
+A consulta utiliza os indicadores temporais calculados durante a transformação dos registros e os relaciona à dimensão localidade.
+
+```
+SELECT
+    l.regiao_brasil,
+    AVG(f.qt_dias_atraso_notif)
+        AS atraso_notificacao,
+    AVG(f.qt_dias_encerramento)
+        AS tempo_encerramento
+FROM fato_notificacao_zika f
+INNER JOIN dim_localidade l
+    ON l.sk_localidade =
+       f.fk_localidade_residencia
+GROUP BY l.regiao_brasil
+ORDER BY l.regiao_brasil;
+```
+
+Os resultados permitem construir um gráfico de barras horizontais comparando os dois indicadores nas diferentes regiões.
+
+As médias consideram apenas intervalos válidos, entre 0 e 365 dias. Registros com datas ausentes, inconsistentes ou fora desse intervalo não contribuem para o cálculo da respectiva média.
+
+**Insight e interpretação:** A principal contribuição da análise é permitir comparar aspectos temporais do processo de vigilância epidemiológica nas diferentes regiões brasileiras.
+
+O intervalo entre os primeiros sintomas e a notificação pode auxiliar na descrição da oportunidade dos registros disponíveis, enquanto o intervalo até o encerramento permite explorar diferenças nos tempos documentados de conclusão das investigações.
+Entretanto, médias devem ser interpretadas juntamente com a quantidade de observações válidas utilizadas em seu cálculo.
+Uma região com muitos registros sem data de encerramento, por exemplo, pode apresentar uma média baseada apenas em uma parcela das notificações, o que limita a interpretação do resultado.
+Além disso, os indicadores não permitem estabelecer, isoladamente, a eficiência de um sistema regional de saúde, pois dependem da qualidade e da completude das informações registradas.
+
+### **6.4. Síntese dos três insights**
+
+| Análise                   | Principal contribuição                                                                             |
+| ------------------------- | -------------------------------------------------------------------------------------------------- |
+| Evolução temporal         | Permite identificar variações mensais e investigar padrões sazonais sem depender do ano do arquivo |
+| Notificações em gestantes | Permite comparar a distribuição territorial de notificações e confirmações em gestantes            |
+| Tempos da vigilância      | Permite analisar diferenças regionais nos intervalos de notificação e encerramento                 |
+
+As três análises demonstram a utilidade da modelagem dimensional para responder a perguntas distintas utilizando uma mesma base integrada.
+-   A dimensão temporal fornece o recorte cronológico, a dimensão localidade permite a organização territorial e os indicadores da tabela fato viabilizam cálculos quantitativos.
+Entretanto, a apresentação de conclusões empíricas definitivas, como os meses de maior concentração de notificações, os estados com maiores quantitativos e as regiões com maiores atrasos médios, depende dos resultados efetivos da execução do notebook sobre a versão consolidada de 82.404 registros.
+
+## **7. Reflexão sobre o Aprendizado**
+
+O desenvolvimento do projeto proporcionou uma experiência prática de integração e análise de dados reais, permitindo aplicar conhecimentos adquiridos na disciplina de Banco de Dados em um contexto de saúde pública.
+Uma das principais lições aprendidas foi compreender que a integração de dados envolve desafios que ultrapassam a simples união de diferentes arquivos.
+Embora os três conjuntos de notificações apresentassem uma estrutura comum de 38 atributos, foi necessário investigar a qualidade dos registros, identificar inconsistências temporais, tratar valores desconhecidos e estabelecer critérios de deduplicação.
+A presença de registros associados a anos diferentes daqueles indicados nos nomes dos arquivos demonstrou a importância de definir corretamente os atributos utilizados para representar o tempo nas análises.
+
+Outro aprendizado relevante esteve relacionado à interpretação das variáveis epidemiológicas. Campos como `NU_IDADE_N`, `CS_GESTANT`, `CLASSI_FIN` e `EVOLUCAO` exigiram a compreensão de seus respectivos domínios e regras específicas antes de serem utilizados na construção do Data Warehouse.
+Essa etapa evidenciou que a transformação de dados precisa considerar o significado dos atributos, e não apenas seu formato técnico.
+
+A implementação do esquema estrela também contribuiu para aprofundar o entendimento sobre modelagem dimensional, granularidade, chaves substitutas, chaves estrangeiras e organização de tabelas fato e dimensão.
+A necessidade de construir dimensões a partir de combinações distintas de atributos permitiu perceber a importância de diferenciar entidades individuais de perfis analíticos, evitando interpretações incorretas dos registros.
+
+A utilização de duas arquiteturas de integração, ETL e ELT, constituiu outro ponto importante do aprendizado.
+O desenvolvimento do ETL permitiu explorar a flexibilidade do Python e do Pandas para executar operações de transformação em memória, enquanto o ELT demonstrou como o MySQL e o dbt podem ser utilizados para organizar o processamento diretamente no banco.
+
+A aplicação de um contrato compartilhado entre os dois pipelines reforçou a importância de manter regras de negócio centralizadas e consistentes.
+
+Além disso, os testes de equivalência evidenciaram o valor da validação automatizada. A comparação dos resultados finais permitiu verificar que diferentes implementações podiam produzir a mesma estrutura analítica, enquanto os testes de integridade contribuíram para identificar possíveis falhas de processamento.
+
+Entre os desafios técnicos, destacaram-se a interpretação de códigos epidemiológicos, a compatibilização das regras de transformação entre Python e SQL, a preservação da rastreabilidade dos registros e a garantia de integridade durante a publicação no banco.
+A organização do trabalho em diferentes frentes também demonstrou a importância da colaboração entre os integrantes. A divisão das responsabilidades entre arquitetura, ETL, ELT, validação, análises e documentação exigiu alinhamento constante para que as diferentes partes utilizassem as mesmas definições.
+
+Por fim, a elaboração das três análises reforçou a percepção de que resultados quantitativos precisam ser acompanhados de interpretação cuidadosa.
+No contexto epidemiológico, diferenças no número de notificações não representam automaticamente diferenças de incidência ou risco. Fatores como cobertura temporal, ausência de informações e diferenças de preenchimento podem influenciar a interpretação dos resultados.
+Dessa maneira, o projeto contribuiu não apenas para o desenvolvimento de competências técnicas em bancos de dados e integração, mas também para uma compreensão mais crítica sobre qualidade, reprodutibilidade, interpretação e comunicação de informações.
+
+## **Conclusão**
+
+O projeto de integração das notificações de Zika vírus no Brasil demonstrou a aplicação prática de conceitos de integração de dados, modelagem dimensional e processamento analítico.
+A partir de três arquivos referentes às extrações de 2024, 2025 e 2026, foram consolidados 82.460 registros brutos, posteriormente submetidos a procedimentos de deduplicação, validação, padronização e transformação.
+O processo resultou em uma base integrada de 82.404 notificações distintas segundo o critério adotado, organizada em um esquema estrela composto por cinco dimensões e uma tabela fato central.
+
+A implementação de pipelines ETL e ELT permitiu explorar diferentes estratégias de processamento, mantendo uma estrutura final comum e regras de transformação compartilhadas.
+
+Os testes registrados no repositório comprovaram a equivalência dos resultados produzidos pelos dois pipelines na versão validada, além da consistência das principais regras e restrições de integridade.
+
+As três análises implementadas demonstram o potencial do Data Warehouse para investigar variações temporais, características das notificações em gestantes e intervalos relacionados aos processos de vigilância epidemiológica.
+Entretanto, a interpretação dos resultados deve considerar as limitações das fontes, especialmente a cobertura parcial de 2026, a ausência de identificadores únicos de indivíduos e o preenchimento incompleto de determinados atributos.
+Conclui-se que a integração de dados constitui uma atividade essencial para transformar informações originalmente dispersas em estruturas consistentes e adequadas à análise. O desenvolvimento do projeto reforçou a importância de combinar ferramentas computacionais, modelagem de dados, validação automatizada e conhecimento sobre o domínio estudado para produzir informações confiáveis e interpretáveis.
+
+## **Referências e materiais técnicos**
+
+As seguintes referências documentam os dados, as regras e os resultados utilizados neste relatório:
+
+- [Ministério da Saúde — Dados abertos de Zika vírus](https://dadosabertos.saude.gov.br/dataset/arboviroses-zika-virus?utm_source=chatgpt.com).
+- [Repositório completo do projeto](https://github.com/CauaEmano/projeto-integracao-bd-cin?utm_source=chatgpt.com).
+- [Dicionário de dados e mapeamento das divergências](https://github.com/CauaEmano/projeto-integracao-bd-cin/blob/main/docs/dicionario_de_dados_e_mapeamento_de_divergencias.md?utm_source=chatgpt.com).
+- [Script DDL do esquema estrela](https://github.com/CauaEmano/projeto-integracao-bd-cin/blob/main/sql/01_script_ddl_do_esquema_estrela.sql?utm_source=chatgpt.com).
+- [Validação técnica dos pipelines — 13/11/2026](https://github.com/CauaEmano/projeto-integracao-bd-cin/blob/main/docs/validacao_pipelines.md?utm_source=chatgpt.com).
+- [Notebook das três análises epidemiológicas](https://github.com/CauaEmano/projeto-integracao-bd-cin/blob/main/notebooks/analises_zika.ipynb?utm_source=chatgpt.com).
+- [Diagrama do esquema estrela](https://github.com/CauaEmano/projeto-integracao-bd-cin/blob/main/docs/figuras/esquema_estrela.svg?utm_source=chatgpt.com).
+
+### **Verificações necessárias antes da entrega**
+
+O relatório cobre os sete tópicos solicitados, mas existem elementos que o repositório ainda não permite apresentar como resultados definitivos.
+
+1. **Análises quantitativas:** executar o notebook de análises e incorporar os valores efetivos e os três gráficos exportados. Sem esses resultados, a seção 6 apresenta os métodos e as interpretações possíveis, mas não três descobertas quantitativas demonstradas.
+2. **Comparativo de desempenho:** inserir os tempos medidos de ETL e ELT, utilizando condições e escopos equivalentes.
+3. **Evidências:** anexar as capturas das etapas intermediárias e os resultados da execução dos pipelines, especialmente no ambiente Colab.
+4. **Revisão coletiva:** confirmar com os integrantes se a reflexão representa fielmente os desafios enfrentados e validar o conteúdo antes da entrega.
+
+Essas pendências estão alinhadas ao checklist do próprio repositório para a entrega de 18 de novembro de 2026. A inclusão dos resultados efetivos, sem reutilizar números de versões anteriores à deduplicação, é essencial para que o relatório se torne um documento acadêmico final, integralmente fundamentado nas evidências do projeto.

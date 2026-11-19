@@ -65,14 +65,30 @@ O [dicionário completo](dicionario_de_dados_e_mapeamento_de_divergencias.md) in
 
 ## 2. Explicação Detalhada do Processo de Integração
 
-*(Nota para a Macroentrega 2: As Duplas 1 e 2 devem inserir aqui os prints intermediários da execução dos notebooks ETL e ELT).*
+### 2.1. ETL: transformar antes de carregar
 
-O processo de integração dos três arquivos anuais (`ZIKABR24.csv`, `ZIKABR25.csv` e `ZIKABR26.csv`) foi estruturado em quatro etapas:
+O notebook `pipeline_ETL.ipynb` chama `extract()` para ler os três CSVs como texto, preservando os 38 campos e acrescentando `arquivo_origem` e `linha_origem`. `transform()` remove somente duplicatas exatas, valida datas e decodifica os domínios. `star()` constrói as cinco dimensões e as chaves da fato em memória. Somente depois dessas etapas `publish()` abre a publicação MySQL, prepara o DDL e insere dimensões antes da fato. `validate()` consulta contagens e métricas finais.
 
-1. **Coleta e Ingestão Unificada:** Leitura dos três arquivos CSV referentes aos anos de $2024$, $2025$ e $2026$, adicionando uma coluna de metadado de rastreabilidade (`arquivo_origem`) para identificar a qual extração anual cada registro pertence originalmente.
-2. **Calendário e Deduplicação Exata:** O nome do arquivo pode diferir do ano de `DT_NOTIFIC`, como demonstrado no inventário. O calendário usa a data efetiva, sem descartar essas linhas. A deduplicação compara os 38 campos textuais e remove somente cópias idênticas, dentro ou entre arquivos; linhas diferentes não são presumidas como o mesmo caso.
-3. **Padronização e Decodificação de Domínios:** Conversão das variáveis codificadas numericamente (como `NU_IDADE_N`, `CS_GESTANT`, `CS_RACA`, `CLASSI_FIN`, `CRITERIO`, `EVOLUCAO` e `SG_UF`) em descrições analíticas legíveis para compor as dimensões.
-4. **Geração de Chaves Substitutas (*Surrogate Keys*) e Carga Dimensional:** Povoamento das 5 tabelas dimensão com registros únicos e inserção dos eventos e métricas calculadas na tabela fato `FATO_NOTIFICACAO_ZIKA`.
+A [cópia executada em Colab](evidencias/etl_colab_executado.ipynb) já incluída pela equipe mostra **82.460 linhas lidas, 56 duplicatas, zero rejeições e 82.404 linhas finais**, com as cinco dimensões consultadas no MySQL. O [manifesto ETL](evidencias/manifesto_etl.json) registra 31,061 segundos para a execução CLI. Essa evidência usa Python 3.13 com dependências apenas do ETL; não demonstra compatibilidade do dbt nesse runtime. Para reproduzir ambos os fluxos, seguir a faixa Python 3.10–3.12 documentada no README.
+
+### 2.2. ELT: transformar dentro do MySQL
+
+O notebook ELT lê os CSVs como texto e chama `load_raw()` para gravar **82.460 linhas brutas** em `stg_zika`, com metadados de origem. `stg_zika_unica` deduplica os 38 campos; `int_zika_tipificada` valida tipos e datas; `int_zika_decodificada` traduz domínios e calcula indicadores/intervalos; `int_zika` acrescenta a faixa etária. `elt_rejeitados` preserva linhas cuja data obrigatória é inválida. Os modelos `elt_dim_*` e `elt_fato_notificacao_zika` constroem a estrela por SQL, ordenados pelas dependências `source()` e `ref()` do dbt.
+
+O comando `dbt build` constrói e testa os modelos. Após seu sucesso, `publish()` copia as tabelas ELT para a estrela final com `INSERT ... SELECT`, dentro de uma transação. O [notebook ELT](../notebooks/pipeline_ELT_completo_executado.ipynb) e os [SQLs completos](../dbt/models/) fazem parte da entrega. Apesar do nome histórico, o notebook-fonte está sem saídas: **a evidência de execução ELT em Colab continua pendente**. A [validação MySQL de 13/11](validacao_pipelines.md) é evidência histórica local, não execução Colab.
+
+### 2.3. Etapas intermediárias e resultado comum
+
+![Fluxos de integração](diagrama_fluxo_integracao.png)
+
+| Etapa | Registros |
+|---|---:|
+| Extração / staging bruto | 82.460 |
+| Após remover 56 duplicatas exatas | 82.404 |
+| Rejeitados pela data obrigatória | 0 |
+| Fato publicada na evidência ETL | 82.404 |
+
+Dimensões, incluindo SK=0: tempo **1.003**, localidade **2.562**, unidade notificadora **6.631**, paciente **9.024** e investigação/desfecho **128**. A revisão de 18/11 reconstruiu a estrela em memória e confirmou essas contagens; não repetiu a publicação MySQL, pois não havia servidor disponível neste ambiente.
 
 ---
 
@@ -127,40 +143,98 @@ Os seis testes Python foram aprovados em 16/11/2026, incluindo reconciliação, 
 
 ## 5. Comparativo entre ETL e ELT
 
-*(Nota para a Macroentrega 3: Preencher os tempos medidos na execução dos notebooks no Google Colab).*
+Os fluxos aplicam as mesmas regras aos mesmos arquivos e publicam o mesmo esquema. A diferença está no local e na ordem da transformação, não em critérios distintos de limpeza.
 
-| Critério Analisado | Pipeline ETL (Python / Pandas $\rightarrow$ BD) | Pipeline ELT (Carga Staging $\rightarrow$ SQL no SGBD) |
-| :--- | :--- | :--- |
-| **Fluxo de Processamento** | Os 3 CSVs (`2024`, `2025`, `2026`) são lidos, limpos e modelados em *DataFrames* no Pandas antes de inserir no banco. | Os 3 CSVs são carregados diretamente em tabelas brutas (`stg_zika`, com arquivo e linha de origem) e transformados via SQL. |
-| **Decodificação de Domínios (`NU_IDADE_N`, `CS_GESTANT`, UF)** | Deduplicação com Pandas e decodificação por funções Python e domínios do contrato em `transform`. | Realizada via expressões declarativas `CASE WHEN` e `COALESCE` diretamente nas queries `INSERT INTO ... SELECT`. |
-| **Deduplicação e Geração de Dimensões** | Exige `.drop_duplicates()` em memória e controle manual de índices para gerar as *Surrogate Keys* (`sk_`). | O próprio SGBD garante unicidade via `DISTINCT` / `GROUP BY` e chaves `ROW_NUMBER()`. |
-| **Reprocessamento e Auditoria** | Qualquer mudança em regra de negócio exige reler os CSVs do disco e rodar todo o script Python novamente. | O staging preserva o texto para auditoria. O comando ELT completo relê os CSVs, recarrega staging e executa dbt; retransformação isolada requer procedimento específico e medição própria. |
-| **Tempo Total de Execução (Colab)** | `[Inserir tempo medido na Macroentrega 3]` | `[Inserir tempo medido na Macroentrega 3]` |
+| Critério | ETL | ELT |
+|---|---|---|
+| Ordem | Extrair → transformar em Python → carregar estrela | Extrair → carregar staging → transformar em SQL → publicar estrela |
+| Ferramentas | Pandas e funções Python | MySQL e modelos dbt com dependências explícitas |
+| Vantagem no projeto | Inspeção de registros e depuração das regras antes da carga | Texto bruto consultável no staging e transformação/testes declarados no banco |
+| Custo / limitação | DataFrames, registros e dimensões ocupam memória do processo Python | Staging e tabelas intermediárias ocupam armazenamento e recursos do SGBD; exige adapter dbt compatível |
+| Deduplicação | `drop_duplicates` sobre 38 campos | Agrupamento dos 38 campos e ordenação por origem |
+| Reprocessamento demonstrado | Comando completo relê CSVs e reconstrói a estrela | Comando completo relê CSVs, recarrega staging e executa dbt |
+| Publicação | Inserção em lotes por connector | `INSERT ... SELECT` dos modelos ELT |
+| Integridade | Mesmo DDL com PK/FK/checks e rollback | Mesmo DDL com PK/FK/checks e rollback |
+| Medição disponível | 31,061 s na evidência Colab ETL | Sem medição Colab comparável disponível |
+
+O tempo ETL é uma execução de `pipelines.run.run('etl')`, incluindo leitura, transformação, construção da estrela, carga e validação, sem a instalação do ambiente. Não é um benchmark: não há repetições, medição de memória nem tempo ELT equivalente. O tempo isolado do dbt também não seria diretamente comparável ao ETL completo.
+
+Para os 82.460 registros, o ETL facilita inspecionar regras em Python; o ELT demonstra processamento no SGBD e mantém staging auditável. A escolha depende do ambiente, dos recursos e da manutenção desejada. Não se conclui superioridade de desempenho sem medições comparáveis. A equivalência integral das seis tabelas está relatada na validação histórica MySQL, enquanto os testes atuais confirmam contrato, regras e contagens ETL.
 
 ---
 
 ## 6. Apresentação de Três Análises e Insights
 
-As consultas, gráficos e exportações estão em [`notebooks/analises_zika.ipynb`](../notebooks/analises_zika.ipynb),
-executado após ETL ou ELT. Os pipelines contêm apenas reconciliação e validações operacionais.
+As consultas completas estão no [notebook de análises](../notebooks/analises_zika.ipynb). Nesta revisão, `python -m scripts.validar_analises` reconstruiu a estrela ETL e executou as mesmas seis consultas em SQLite em memória, exportando as [tabelas](analises/tabelas/) e figuras. O [manifesto da revisão](evidencias/validacao_analises.json) identifica hashes, ambiente e contagens. Essa reprodução valida os números; não substitui a execução MySQL/Colab exigida para os pipelines.
 
-1. **Sazonalidade:** evolução mensal de notificações por ano real de `DT_NOTIFIC`.
-2. **Gestantes:** notificações e confirmações por UF de residência, incluindo a categoria NI.
-3. **Vigilância:** médias de atraso de notificação e tempo de encerramento por região,
-   considerando apenas intervalos válidos de 0 a 365 dias.
+### 6.1. Em quais meses se concentram as notificações?
 
-Os gráficos são exportados para `saidas/analises/`. As conclusões devem ser registradas após
-executar as análises sobre a versão atual, sem reutilizar estatísticas da carga anterior.
-2026 é parcial; contagens absolutas de notificações não medem incidência populacional.
+![Série mensal](analises/01_sazonalidade.png)
+
+**Método:** somar `qt_notificacoes` por ano e mês de `DT_NOTIFIC`; comparar janeiro–setembro entre anos. [Tabela mensal](analises/tabelas/01_sazonalidade.csv).
+
+**Resultado:** 58.307 de 82.404 notificações (**70,8%**) estão entre janeiro e maio. O pico de 2024 é março, com **10.366** registros; em 2025, abril tem **3.829**. Na janela janeiro–setembro são **39.373**, **22.942** e **13.384** registros em 2024, 2025 e 2026, respectivamente: reduções de aproximadamente **41,7%** em cada comparação sucessiva.
+
+**Insight e limite:** há concentração no início do ano nesta extração, útil para descrever a demanda registrada. Usar meses comuns evita comparar um ano inteiro com um parcial, mas não garante completude dos registros. As contagens não demonstram redução de incidência nem explicação climática causal. Outubro de 2026 contém apenas um registro; não deve ser tratado como mês completo.
+
+### 6.2. Onde se concentram notificações e confirmações em gestantes?
+
+![Gestantes por UF](analises/02_gestantes.png)
+
+**Método:** somar `fl_gestante` e `fl_gestante * fl_confirmado` por UF de residência, preservando NI. [Tabela por UF](analises/tabelas/02_gestantes.csv).
+
+**Resultado:** **7.184** notificações em gestantes, das quais **207 (2,88%)** confirmadas. SP tem **2.487** notificações e **3** confirmações; MT tem **328** e **109**, respectivamente. MT reúne **52,7%** das confirmações em gestantes. Há **2** notificações com UF não informada, sendo **1** confirmada.
+
+**Insight e limite:** a UF com maior volume de notificações em gestantes não coincide com a maior concentração de confirmações. A comparação pede investigação da cobertura e dos critérios registrados; não permite atribuir diferenças a protocolos de pré-natal ou surtos. São notificações, não contagem de pessoas únicas nem risco de infecção.
+
+### 6.3. Como variam os tempos da vigilância entre regiões?
+
+![Tempos por região](analises/03_tempos.png)
+
+**Método:** calcular médias somente dos intervalos válidos de 0–365 dias, com contagem e cobertura por métrica. [Tabela com denominadores](analises/tabelas/03_tempos.csv).
+
+| Região | Notificação: média em dias | Encerramento: média em dias | Encerramentos válidos / notificações |
+|---|---:|---:|---:|
+| Centro-Oeste | 4,49 | 30,34 | 17.410 / 17.513 |
+| Nordeste | 5,85 | 29,57 | 32.559 / 33.800 |
+| Norte | 6,05 | 23,37 | 15.045 / 15.325 |
+| Sudeste | 5,94 | 32,55 | 14.369 / 14.635 |
+| Sul | 10,13 | 25,64 | 1.073 / 1.099 |
+| Não informado | 5,69 | 14,60 | 25 / 32 |
+
+**Resultado:** no total, o atraso médio de notificação é **5,67 dias**, com mediana **3** e **82.404** intervalos válidos (100%). O encerramento médio é **29,05 dias**, com mediana **19** e **80.481** intervalos válidos (**97,67%**). A média nacional é calculada sobre os registros, não pela média simples das regiões.
+
+**Insight e limite:** o Sul apresenta maior média até notificação, enquanto o Sudeste apresenta maior média até encerramento. O resultado sugere pontos para investigação operacional, sem provar a causa nem medir sozinho a eficiência da vigilância. Os **1.923** intervalos de encerramento ausentes ou inválidos ficam fora da média; a falta de encerramento pode produzir viés.
+
+O notebook preserva três análises complementares de perfil, classificação/critério e diferença entre local de notificação e residência. Elas não são necessárias para atingir as três análises exigidas; seus resultados completos acompanham os CSVs exportados.
 
 ---
 
 ## 7. Reflexão sobre o Aprendizado
 
-*(Nota para a Macroentrega 4: Revisar com todo o grupo antes da entrega final em 18/11).*
+O desenvolvimento do projeto proporcionou uma experiência prática de integração e análise de dados reais, permitindo aplicar conhecimentos adquiridos na disciplina de Banco de Dados em um contexto de saúde pública.
+Uma das principais lições aprendidas foi compreender que a integração de dados envolve desafios que ultrapassam a simples união de diferentes arquivos.
+Embora os três conjuntos de notificações apresentassem uma estrutura comum de 38 atributos, foi necessário investigar a qualidade dos registros, identificar inconsistências temporais, tratar valores desconhecidos e estabelecer critérios de deduplicação.
+A presença de registros associados a anos diferentes daqueles indicados nos nomes dos arquivos demonstrou a importância de definir corretamente os atributos utilizados para representar o tempo nas análises.
 
-O desenvolvimento deste projeto permitiu ao grupo vivenciar na prática os desafios reais da construção de um Data Warehouse a partir de microdados governamentais de saúde pública (SINAN/DataSUS). Os principais aprendizados incluem:
+Outro aprendizado relevante esteve relacionado à interpretação das variáveis epidemiológicas. Campos como `NU_IDADE_N`, `CS_GESTANT`, `CLASSI_FIN` e `EVOLUCAO` exigiram a compreensão de seus respectivos domínios e regras específicas antes de serem utilizados na construção do Data Warehouse.
+Essa etapa evidenciou que a transformação de dados precisa considerar o significado dos atributos, e não apenas seu formato técnico.
 
-1. **Compreensão Profunda das Anomalias em Séries Históricas Reais:** Mesmo trabalhando com uma única fonte temática (Zika Vírus) em três anos consecutivos ($2024$, $2025$ e $2026$), verificamos que dados brutos exigem intenso saneamento devido a vazamentos de semanas epidemiológicas entre arquivos anuais, campos numéricos lidos como *float* por presença de nulos e códigos compostos legados (como `NU_IDADE_N`).
-2. **Desnormalização Consciente no Esquema Estrela:** A separação da tabela única do SINAN em cinco dimensões (`DIM_TEMPO`, `DIM_LOCALIDADE`, `DIM_UNIDADE_NOTIFICADORA`, `DIM_PACIENTE` e `DIM_INVESTIGACAO_DESFECHO`) e uma tabela fato central tornou as consultas analíticas das três análises muito mais legíveis, rápidas e semânticas.
-3. **Domínio Prático de ETL vs. ELT:** A implementação paralela dos dois pipelines deixou claro como o **ETL em Python/Pandas** facilita a manipulação imperativa de tipos e strings na memória, enquanto o **ELT em SQL** brilha pela simplicidade declarativa, velocidade de agregação em conjunto (*set-based operations*) e manutenção das tabelas *Staging* para auditoria.
+A implementação do esquema estrela também contribuiu para aprofundar o entendimento sobre modelagem dimensional, granularidade, chaves substitutas, chaves estrangeiras e organização de tabelas fato e dimensão.
+A necessidade de construir dimensões a partir de combinações distintas de atributos permitiu perceber a importância de diferenciar entidades individuais de perfis analíticos, evitando interpretações incorretas dos registros.
+
+A utilização de duas arquiteturas de integração, ETL e ELT, constituiu outro ponto importante do aprendizado.
+O desenvolvimento do ETL permitiu explorar a flexibilidade do Python e do Pandas para executar operações de transformação em memória, enquanto o ELT demonstrou como o MySQL e o dbt podem ser utilizados para organizar o processamento diretamente no banco.
+
+A aplicação de um contrato compartilhado entre os dois pipelines reforçou a importância de manter regras de negócio centralizadas e consistentes.
+
+Além disso, os testes de equivalência evidenciaram o valor da validação automatizada. A comparação dos resultados finais permitiu verificar que diferentes implementações podiam produzir a mesma estrutura analítica, enquanto os testes de integridade contribuíram para identificar possíveis falhas de processamento.
+
+Entre os desafios técnicos, destacaram-se a interpretação de códigos epidemiológicos, a compatibilização das regras de transformação entre Python e SQL, a preservação da rastreabilidade dos registros e a garantia de integridade durante a publicação no banco.
+A organização do trabalho em diferentes frentes também demonstrou a importância da colaboração entre os integrantes. A divisão das responsabilidades entre arquitetura, ETL, ELT, validação, análises e documentação exigiu alinhamento constante para que as diferentes partes utilizassem as mesmas definições.
+
+Por fim, a elaboração das três análises reforçou a percepção de que resultados quantitativos precisam ser acompanhados de interpretação cuidadosa.
+No contexto epidemiológico, diferenças no número de notificações não representam automaticamente diferenças de incidência ou risco. Fatores como cobertura temporal, ausência de informações e diferenças de preenchimento podem influenciar a interpretação dos resultados.
+Dessa maneira, o projeto contribuiu não apenas para o desenvolvimento de competências técnicas em bancos de dados e integração, mas também para uma compreensão mais crítica sobre qualidade, reprodutibilidade, interpretação e comunicação de informações.
+
+A divisão de responsabilidades está registrada no README: Cauã (arquitetura), Allanis (ETL), Arthur (ELT/SGBD), Allan (SQL e comparação), Felipe (análises) e Amanda (relatório/apresentação). Essa divisão é declarada pela equipe; a autoria efetiva deve ser conferida nos commits, sem atribuir automaticamente estas correções a um integrante.

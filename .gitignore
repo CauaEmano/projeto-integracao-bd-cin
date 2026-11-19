@@ -6,3 +6,4 @@ saidas/
 dbt/target/
 dbt/logs/
 dbt/dbt_packages/
+tmp/

@@ -1,0 +1,16 @@
+faixa_etaria,descricao_sexo,notificacoes,confirmados
+0 a 14 anos,Feminino,7635,467
+0 a 14 anos,Ignorado,5,0
+0 a 14 anos,Masculino,8393,467
+15 a 29 anos,Feminino,15584,762
+15 a 29 anos,Ignorado,5,0
+15 a 29 anos,Masculino,8688,416
+30 a 44 anos,Feminino,13159,701
+30 a 44 anos,Ignorado,3,0
+30 a 44 anos,Masculino,6957,362
+45 a 59 anos,Feminino,8193,546
+45 a 59 anos,Ignorado,2,0
+45 a 59 anos,Masculino,5085,266
+60 anos ou mais,Feminino,4988,375
+60 anos ou mais,Ignorado,3,1
+60 anos ou mais,Masculino,3704,256

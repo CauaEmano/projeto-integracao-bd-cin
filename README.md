@@ -12,10 +12,13 @@ Os dois pipelines publicam **o mesmo esquema MySQL, com os mesmos dados e regras
 ## Materiais da entrega de 18/11/2026
 
 O [índice de entregáveis](docs/entregaveis.md) reúne os arquivos disponíveis, seu estado
-e as pendências de integração. O relatório ainda recebe resultados das outras frentes;
-os slides e as evidências de execução Colab estão pendentes.
+e as pendências de integração. O relatório foi consolidado com três análises quantitativas e slides. A evidência ETL
+Colab está disponível; a execução ELT em Colab e a conferência da publicação final
+ainda precisam ser concluídas pela equipe. Veja a [revisão de conformidade](docs/revisao_entrega_18-11.md).
 
-- [Relatório em elaboração — sete seções](docs/relatorio_projeto_integracao.md)
+- [Relatório consolidado — sete seções](docs/relatorio_projeto_integracao.md)
+- [Slides da apresentação](docs/apresentacao/apresentacao_zika.pptx) e [roteiro](docs/apresentacao/roteiro.md)
+- [Evidência ETL Colab](docs/evidencias/etl_colab_executado.ipynb) e [validação atual das análises](docs/evidencias/validacao_analises.json)
 - [Dicionário completo das seis tabelas](docs/dicionario_de_dados_e_mapeamento_de_divergencias.md)
 - [Esquema estrela — imagem vetorial](docs/figuras/esquema_estrela.svg) e [PNG](docs/figuras/esquema_estrela.png)
 - [Fonte, cobertura e limitações dos CSVs](dados/README_DADOS.md) e [inventário com SHA-256](dados/metadados_fontes.json)
@@ -34,7 +37,7 @@ representa perfis, sem identificar pessoas. [Detalhes da modelagem](docs/relator
 | `dados/ZIKABR{24,25,26}.csv` | Três bases brutas, 38 campos e 82.460 linhas no total |
 | `notebooks/pipeline_ETL.ipynb` | Execução ETL em etapas, com transformação em Python |
 | `notebooks/pipeline_ELT_completo_executado.ipynb` | Execução ELT com MySQL e dbt; saídas antigas removidas |
-| `notebooks/analises_zika.ipynb` | Consultas e três visualizações, separadas dos pipelines |
+| `notebooks/analises_zika.ipynb` | Três análises principais e três complementares, separadas dos pipelines |
 | `pipelines/core.py` | Extração e transformação ETL |
 | `pipelines/run.py` | Orquestração por linha de comando |
 | `pipelines/contrato.json` | Colunas, tipos, domínios e UFs compartilhados |
@@ -306,8 +309,18 @@ os hashes locais não comprovam igualdade com a versão atual publicada na fonte
 Abra `notebooks/analises_zika.ipynb` após concluir um dos fluxos. O notebook consulta o
 esquema final e gera gráficos de sazonalidade, gestantes por UF e tempos da vigilância em
 `saidas/analises/`. O relatório aponta para esse arquivo e para o dicionário.
-2026 é parcial; os números antigos calculados antes da deduplicação devem ser recalculados.
-O PDF comparativo existente é um artefato histórico, não a especificação dos fluxos atuais.
+2026 é parcial. Os resultados revisados estão em `docs/analises/`, com tabelas em
+`docs/analises/tabelas/`. O comparativo vigente é a seção 5 do relatório. Materiais
+anteriores foram preservados em `docs/historico/`, fora do pacote de entrega.
+
+Para reproduzir os números e verificar as seis células analíticas sem servidor MySQL:
+
+```bash
+python -m scripts.validar_analises
+```
+
+Esse comando reconstrói a estrela ETL e executa as consultas em SQLite em memória.
+Ele não substitui a integração MySQL nem comprova execução em Colab.
 
 `saidas/` e `dbt/target/` são ignorados pelo Git. Evidências selecionadas para entrega
 devem ir para `docs/evidencias/` e gráficos finais para `docs/figuras/`, com origem e data.

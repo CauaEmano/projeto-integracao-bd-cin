@@ -1,0 +1,28 @@
+ano,classificacao_final,criterio_confirmacao,notificacoes
+2024.0,Confirmado,Laboratorial,1617
+2024.0,Confirmado,Clínico-Epidemiológico,420
+2024.0,Confirmado,Ignorado / Não Preenchido,31
+2024.0,Descartado,Laboratorial,27818
+2024.0,Descartado,Clínico-Epidemiológico,9913
+2024.0,Descartado,Ignorado / Não Preenchido,368
+2024.0,Inconclusivo / Em Investigação,Ignorado / Não Preenchido,2988
+2024.0,Inconclusivo / Em Investigação,Laboratorial,34
+2024.0,Inconclusivo / Em Investigação,Clínico-Epidemiológico,18
+2025.0,Confirmado,Laboratorial,1506
+2025.0,Confirmado,Clínico-Epidemiológico,363
+2025.0,Confirmado,Ignorado / Não Preenchido,6
+2025.0,Descartado,Laboratorial,18394
+2025.0,Descartado,Clínico-Epidemiológico,3640
+2025.0,Descartado,Ignorado / Não Preenchido,115
+2025.0,Inconclusivo / Em Investigação,Ignorado / Não Preenchido,1754
+2025.0,Inconclusivo / Em Investigação,Laboratorial,25
+2025.0,Inconclusivo / Em Investigação,Clínico-Epidemiológico,9
+2026.0,Confirmado,Laboratorial,560
+2026.0,Confirmado,Clínico-Epidemiológico,108
+2026.0,Confirmado,Ignorado / Não Preenchido,8
+2026.0,Descartado,Laboratorial,9615
+2026.0,Descartado,Clínico-Epidemiológico,1574
+2026.0,Descartado,Ignorado / Não Preenchido,55
+2026.0,Inconclusivo / Em Investigação,Ignorado / Não Preenchido,1433
+2026.0,Inconclusivo / Em Investigação,Laboratorial,20
+2026.0,Inconclusivo / Em Investigação,Clínico-Epidemiológico,12

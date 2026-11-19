@@ -1,5 +1,7 @@
 # Pendências e divisão de tarefas para a entrega de 18/11/2026
 
+> Plano histórico de 16/11. Para o estado atualizado, consulte [revisão de entrega de 18/11](revisao_entrega_18-11.md) e [índice atual](entregaveis.md). Itens abaixo não foram retroativamente marcados como realizados por seus responsáveis.
+
 Revisão realizada em **16/11/2026**, com base nos dois PDFs fornecidos e no estado local do repositório. Os responsáveis seguem os seis nomes e as frentes já registrados no README. Os horários abaixo são metas internas propostas, no fuso de Fortaleza; o horário oficial de envio não foi informado.
 
 ## 1. Escopo e fontes
